@@ -15,8 +15,8 @@ const validateStudentInfo = async (ssn) => {
     const dataToReturn = {
         isUnder18: undefined, // True/false
         isStudent: undefined, // True/false
-        gotforeldreansvarlig: undefined, // True/false
-        foreldreansvar: undefined, // Array 
+        gotAnsvarlig: undefined, // True/false
+        ansvarlig: undefined, // Array 
         adressblock: undefined, // True/false
         isError: false, // True/false
         error: '' // String
