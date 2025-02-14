@@ -45,7 +45,7 @@ const validateStudentInfo = async (ssn) => {
         // If student is under 18 we also need to check if the student has foreldreansvar
         if(subjectData.person.foreldreansvar) {
             logger('info', [logPrefix, 'Student has foreldre/ansvarlig'])
-            dataToReturn.gotforeldreansvarlig = true
+            dataToReturn.gotAnsvarlig = true
             // If student has foreldre/ansvarlig we need to get additional data
             if(subjectData.person.foreldreansvar.length > 1 && subjectData.person.foreldreansvar[0].ansvar === 'felles') {
                 for(let i = 0; i < subjectData.person.foreldreansvar.length; i++) {
@@ -61,9 +61,9 @@ const validateStudentInfo = async (ssn) => {
 
                 subjectData.person.foreldreansvar[0] = foreldreansvarligData
             }
-            dataToReturn.foreldreansvar = subjectData.person.foreldreansvar
+            dataToReturn.ansvarlig = subjectData.person.foreldreansvar
         } else {
-            dataToReturn.foreldreansvar = subjectData.person.foreldreansvar
+            dataToReturn.ansvarlig = subjectData.person.foreldreansvar
             logger('info', [logPrefix, 'Student does not have foreldre/ansvarlig'])
             dataToReturn.isError = true
             dataToReturn.error = 'No foreldre/ansvarlig found'
@@ -71,7 +71,7 @@ const validateStudentInfo = async (ssn) => {
     } else {
         logger('info', [logPrefix, 'Student is 18 or older'])
         dataToReturn.isUnder18 = false
-        dataToReturn.foreldreansvar = subjectData.person.foreldreansvar
+        dataToReturn.ansvarlig = subjectData.person.foreldreansvar
     }
     
     // Only run this check if theres no previous errors
