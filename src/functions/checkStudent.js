@@ -4,11 +4,11 @@ const { validateStudentInfo } = require('../lib/validateStudent.js')
 app.http('checkStudent', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'checkStudent/{ssn}/{onlyAnsvarlig}',
+    route: 'checkStudent/{ssn}',
     handler: async (request, context) => {
         const ssn = request.params.ssn
         const onlyAnsvarlig = request.params.onlyAnsvarlig
-        const data = await validateStudentInfo(ssn, onlyAnsvarlig)
+        const data = await validateStudentInfo(ssn)
 
         return { jsonBody: data };
     }
