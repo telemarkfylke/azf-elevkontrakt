@@ -16,7 +16,7 @@ const validateStudentInfo = async (ssn) => {
         isUnder18: undefined, // True/false
         isStudent: undefined, // True/false
         gotAnsvarlig: undefined, // True/false
-        ansvarlig: undefined, // Array 
+        ansvarlig: [], // Array 
         adressblock: undefined, // True/false
         isError: false, // True/false
         error: '' // String
@@ -52,16 +52,18 @@ const validateStudentInfo = async (ssn) => {
                     const foreldreansvarlig = subjectData.person.foreldreansvar[i]
                     const foreldreansvarligData = await person(foreldreansvarlig.ansvarlig)
 
-                    subjectData.person.foreldreansvar[i] = foreldreansvarligData
+                    // subjectData.person.foreldreansvar[i] = foreldreansvarligData
+                    dataToReturn.ansvarlig.push(foreldreansvarligData)
                 }
             } else {
                 // If student has only one foreldre/ansvarlig we need to get additional data.
                 const foreldreansvarlig = subjectData.person.foreldreansvar[0]
                 const foreldreansvarligData = await person(foreldreansvarlig.ansvarlig)
 
-                subjectData.person.foreldreansvar[0] = foreldreansvarligData
+                // subjectData.person.foreldreansvar[0] = foreldreansvarligData
+                dataToReturn.ansvarlig.push(foreldreansvarligData)
             }
-            dataToReturn.ansvarlig = subjectData.person.foreldreansvar
+            // dataToReturn.ansvarlig = subjectData.person.foreldreansvar
         } else {
             dataToReturn.ansvarlig = subjectData.person.foreldreansvar
             logger('info', [logPrefix, 'Student does not have foreldre/ansvarlig'])
