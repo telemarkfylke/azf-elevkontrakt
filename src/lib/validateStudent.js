@@ -2,7 +2,7 @@ const { logger } = require('@vtfk/logger')
 const { student, employee } = require('../lib/jobs/queryFINT.js')
 const { person } = require('../lib/jobs/queryFREG.js')
 
-const validateStudentInfo = async (ssn) => {
+const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     const logPrefix = 'validateStudentInfo'
     const studentData = await student(ssn)
     const personData = await person(ssn)
@@ -92,7 +92,11 @@ const validateStudentInfo = async (ssn) => {
         dataToReturn.error = 'Must handle manually'
     }
 
-    return dataToReturn
+    if(onlyAnsvarlig === 'true') {
+        return dataToReturn.ansvarlig
+    } else {
+        return dataToReturn
+    }
 }
 
 module.exports = {
