@@ -48,7 +48,19 @@ const student = async (ssn) => {
     return fintData
 }
 
+const schoolInfo = async (orgId) => {
+    const request = {
+        method: 'get',
+        url: `${fint.url}/${fint.endPointSchoolInfo}/${fint.queryTypeOrgId}/${orgId}`
+    }
+
+    const fintData = await queryFINT(request);
+
+    return fintData
+}
+
 module.exports = {
     employee,
-    student
+    student,
+    schoolInfo
 }

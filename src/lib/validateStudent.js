@@ -1,8 +1,11 @@
 const { logger } = require('@vtfk/logger')
-const { student, employee } = require('../lib/jobs/queryFINT.js')
+const { student, schoolInfo } = require('../lib/jobs/queryFINT.js')
 const { person } = require('../lib/jobs/queryFREG.js')
 
 const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
+    let studentData
+    let personData
+    let schoolInfoData
     const logPrefix = 'validateStudentInfo'
 
     // Validate SSN
@@ -15,8 +18,36 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
 
     }
 
-    const studentData = await student(ssn)
-    const personData = await person(ssn)
+    try {
+        studentData = await student(ssn)
+    } catch (error) {
+        logger('error', [logPrefix, 'Error fetching student data', error])
+        return {
+            isError: true,
+            error: 'Error fetching student data'
+        }
+    }
+    
+    try {
+        personData = await person(ssn)
+    } catch (error) {
+        logger('error', [logPrefix, 'Error fetching person data', error])
+        return {
+            isError: true,
+            error: 'Error fetching person data'
+        }
+    }
+    try {
+        schoolInfoData = await schoolInfo(await studentData.elevforhold[0].skole.organisasjonsId)
+        console.log(schoolInfoData)
+    } catch (error) {
+        logger('error', [logPrefix, 'Error fetching school info', error])
+        return {
+            isError: true,
+            error: 'Error fetching school info'
+        }
+        
+    } 
 
     const subjectData = {
         student: studentData,
@@ -27,6 +58,16 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         isUnder18: undefined, // True/false
         isStudent: undefined, // True/false
         gotAnsvarlig: undefined, // True/false
+        schoolInfo: {
+            navn: schoolInfoData.navn || null, // String
+            epost: schoolInfoData.kontaktEpostadresse || null, // String
+            telefon: schoolInfoData.kontaktTelefonnummer || null, // String
+            adresse: {
+                postnummer: schoolInfoData.postadresse?.postnummer || null, // String
+                poststed: schoolInfoData.postadresse?.poststed || null, // String
+                adresse: schoolInfoData.postadresse?.adresselinje || null  // String
+            }
+        }, // Object
         ansvarlig: [], // Array 
         adressblock: undefined, // True/false
         isError: false, // True/false

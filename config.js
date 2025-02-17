@@ -13,6 +13,8 @@ module.exports = {
         endPointStudent: process.env.FINT_ENDPOINT_STUDENT,
         queryTypeSSN: process.env.FINT_QUERY_TYPE_SSN,
         queryTypeUPN: process.env.FINT_QUERY_TYPE_UPN,
+        queryTypeOrgId: process.env.FINT_QUERY_TYPE_ORGID,
+        endPointSchoolInfo: process.env.FINT_ENDPOINT_ORG,
     },
     freg: {
         url: process.env.FREG_URL,
