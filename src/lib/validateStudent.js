@@ -4,6 +4,17 @@ const { person } = require('../lib/jobs/queryFREG.js')
 
 const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     const logPrefix = 'validateStudentInfo'
+
+    // Validate SSN
+    if(ssn.length !== 11 || isNaN(ssn)) {
+        logger('error', [logPrefix, 'Invalid SSN'])
+        return {
+            isError: true,
+            error: 'Invalid SSN'
+        }
+
+    }
+
     const studentData = await student(ssn)
     const personData = await person(ssn)
 
