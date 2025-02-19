@@ -60,7 +60,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         gotAnsvarlig: undefined, // True/false
         gotSchoolName: schoolInfoData.navn === null ? false : true, // True/false
         gotSchoolEpost: schoolInfoData.kontaktEpostadresse === null ? false : true, // True/false
-        gotScgoolTelefon: schoolInfoData.kontaktTelefonnummer === null ? false : true, // True/false
+        gotSchoolTelefon: schoolInfoData.kontaktTelefonnummer === null ? false : true, // True/false
         gotSchoolAdresse: schoolInfoData.postadresse?.adresselinje === null ? false : true, // True/false
         schoolInfo: {
             navn: schoolInfoData.navn || null, // String
