@@ -58,14 +58,18 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         isUnder18: undefined, // True/false
         isStudent: undefined, // True/false
         gotAnsvarlig: undefined, // True/false
+        gotSchoolName: schoolInfoData.navn === null ? false : true, // True/false
+        gotSchoolEpost: schoolInfoData.kontaktEpostadresse === null ? false : true, // True/false
+        gotScgoolTelefon: schoolInfoData.kontaktTelefonnummer === null ? false : true, // True/false
+        gotSchoolAdresse: schoolInfoData.postadresse?.adresselinje === null ? false : true, // True/false
         schoolInfo: {
-            navn: schoolInfoData.navn || false, // String
-            epost: schoolInfoData.kontaktEpostadresse || false, // String
-            telefon: schoolInfoData.kontaktTelefonnummer || false, // String
+            navn: schoolInfoData.navn || null, // String
+            epost: schoolInfoData.kontaktEpostadresse || null, // String
+            telefon: schoolInfoData.kontaktTelefonnummer || null, // String
             adresse: {
-                postnummer: schoolInfoData.postadresse?.postnummer || false, // String
-                poststed: schoolInfoData.postadresse?.poststed || false, // String
-                adresse: schoolInfoData.postadresse?.adresselinje || false  // String
+                postnummer: schoolInfoData.postadresse?.postnummer || null, // String
+                poststed: schoolInfoData.postadresse?.poststed || null, // String
+                adresse: schoolInfoData.postadresse?.adresselinje || null  // String
             }
         }, // Object
         ansvarlig: [], // Array 
