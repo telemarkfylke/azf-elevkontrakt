@@ -59,13 +59,13 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         isStudent: undefined, // True/false
         gotAnsvarlig: undefined, // True/false
         schoolInfo: {
-            navn: schoolInfoData.navn || null, // String
-            epost: schoolInfoData.kontaktEpostadresse || null, // String
-            telefon: schoolInfoData.kontaktTelefonnummer || null, // String
+            navn: schoolInfoData.navn || false, // String
+            epost: schoolInfoData.kontaktEpostadresse || false, // String
+            telefon: schoolInfoData.kontaktTelefonnummer || false, // String
             adresse: {
-                postnummer: schoolInfoData.postadresse?.postnummer || null, // String
-                poststed: schoolInfoData.postadresse?.poststed || null, // String
-                adresse: schoolInfoData.postadresse?.adresselinje || null  // String
+                postnummer: schoolInfoData.postadresse?.postnummer || false, // String
+                poststed: schoolInfoData.postadresse?.poststed || false, // String
+                adresse: schoolInfoData.postadresse?.adresselinje || false  // String
             }
         }, // Object
         ansvarlig: [], // Array 
