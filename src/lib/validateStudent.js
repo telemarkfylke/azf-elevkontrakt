@@ -39,7 +39,6 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     }
     try {
         schoolInfoData = await schoolInfo(await studentData.elevforhold[0].skole.organisasjonsId)
-        console.log(schoolInfoData)
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching school info', error])
         return {
@@ -62,10 +61,12 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         gotSchoolEpost: schoolInfoData.kontaktEpostadresse === null ? false : true, // True/false
         gotSchoolTelefon: schoolInfoData.kontaktTelefonnummer === null ? false : true, // True/false
         gotSchoolAdresse: schoolInfoData.postadresse?.adresselinje === null ? false : true, // True/false
+        gotSchoolOrgNr: schoolInfoData.organisasjonsnummer === null ? false : true, // True/false
         schoolInfo: {
             navn: schoolInfoData.navn || null, // String
             epost: schoolInfoData.kontaktEpostadresse || null, // String
             telefon: schoolInfoData.kontaktTelefonnummer || null, // String
+            orgnr: schoolInfoData.organisasjonsnummer || null, // String
             adresse: {
                 postnummer: schoolInfoData.postadresse?.postnummer || null, // String
                 poststed: schoolInfoData.postadresse?.poststed || null, // String
