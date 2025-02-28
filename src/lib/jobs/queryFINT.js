@@ -19,10 +19,11 @@ const queryFINT = async (request) => {
         return fintData.data
     } catch (error) {
         if(error.status === 404) {
-            logger('error', ['queryFINT', 'Not found', error])
-            return { status: 404, message: 'Not a student' }
+            logger('warn', ['queryFINT', 'Fant ikke data i FINT', error])
+            return { status: 404, message: 'Personen er ikke en student' }
         }
-        return error
+        logger('error', ['queryFINT', 'Klarte ikke å hente data fra FINT', error])
+        return { status: 500, message: 'Internal server error' }
     }
 }
 

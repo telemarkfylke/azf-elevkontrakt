@@ -20,5 +20,11 @@ module.exports = {
         url: process.env.FREG_URL,
         scope: process.env.FREG_SCOPE,
         endPoint: process.env.FREG_ENDPOINT_PERSON,
+    },
+    mongoDB: {
+        connectionString: process.env.MONGODB_CONNECTION_STRING,
+        dbName: process.env.MONGODB_DB_NAME,
+        errorCollection: process.env.MONGODB_ERROR_COLLECTION,
+        contractsCollection: process.env.MONGODB_CONTRACTS_COLLECTION,
     }
 }

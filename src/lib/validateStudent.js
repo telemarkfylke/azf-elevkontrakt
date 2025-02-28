@@ -57,6 +57,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         isUnder18: undefined, // True/false
         isStudent: undefined, // True/false
         gotAnsvarlig: undefined, // True/false
+        uuid: undefined, // String
         gotSchoolName: schoolInfoData.navn === null ? false : true, // True/false
         gotSchoolEpost: schoolInfoData.kontaktEpostadresse === null ? false : true, // True/false
         gotSchoolTelefon: schoolInfoData.kontaktTelefonnummer === null ? false : true, // True/false
@@ -80,55 +81,50 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     }
 
     // Check if student is registered in FINT, if not, check if any person data is found. 
-    logger('info', [logPrefix, 'Checking if student is registered in FINT'])
+    logger('info', [logPrefix, 'Sjekker om studenten er registrert i FINT'])
     if(subjectData.student.message === 'Not a student') {
-        logger('info', [logPrefix, 'Student not found in FINT, checking if any person data is found'])
+        logger('info', [logPrefix, 'Fant ikke student i FINT, sjekker om vi finner noe persondata'])
         if(subjectData.person.foedselsEllerDNummer === null) {
-            logger('info', [logPrefix, 'No person data found'])
+            logger('info', [logPrefix, 'Fant ikke persondata, kan ikke prosessere'])
             dataToReturn.isError = true
             dataToReturn.error = 'No data found, cant process.'
         } else {
-            logger('info', [logPrefix, 'Student not found in FINT, but person data found'])
+            logger('info', [logPrefix, 'Fant ikke student i FINT, men fant persondata'])
         }
     } else {
-        logger('info', [logPrefix, 'Student found in FINT'])
+        logger('info', [logPrefix, 'Fant student i FINT'])
         dataToReturn.isStudent = true
     }
 
     // Check if student is under 18
     if(subjectData.person.alder < 18) {
-        logger('info', [logPrefix, 'Student is under 18'])
+        logger('info', [logPrefix, 'Student er under 18'])
         dataToReturn.isUnder18 = true
         // If student is under 18 we also need to check if the student has foreldreansvar
         if(subjectData.person.foreldreansvar) {
-            logger('info', [logPrefix, 'Student has foreldre/ansvarlig'])
+            logger('info', [logPrefix, 'Student har foreldre/ansvarlig'])
             dataToReturn.gotAnsvarlig = true
             // If student has foreldre/ansvarlig we need to get additional data
             if(subjectData.person.foreldreansvar.length > 1 && subjectData.person.foreldreansvar[0].ansvar === 'felles') {
                 for(let i = 0; i < subjectData.person.foreldreansvar.length; i++) {
                     const foreldreansvarlig = subjectData.person.foreldreansvar[i]
                     const foreldreansvarligData = await person(foreldreansvarlig.ansvarlig)
-
-                    // subjectData.person.foreldreansvar[i] = foreldreansvarligData
                     dataToReturn.ansvarlig.push(foreldreansvarligData)
                 }
             } else {
                 // If student has only one foreldre/ansvarlig we need to get additional data.
                 const foreldreansvarlig = subjectData.person.foreldreansvar[0]
                 const foreldreansvarligData = await person(foreldreansvarlig.ansvarlig)
-
-                // subjectData.person.foreldreansvar[0] = foreldreansvarligData
                 dataToReturn.ansvarlig.push(foreldreansvarligData)
             }
-            // dataToReturn.ansvarlig = subjectData.person.foreldreansvar
         } else {
             dataToReturn.ansvarlig = subjectData.person.foreldreansvar
-            logger('info', [logPrefix, 'Student does not have foreldre/ansvarlig'])
+            logger('info', [logPrefix, 'Student har ikke foreldre/ansvarlig'])
             dataToReturn.isError = true
             dataToReturn.error = 'No foreldre/ansvarlig found'
         }
     } else {
-        logger('info', [logPrefix, 'Student is 18 or older'])
+        logger('info', [logPrefix, 'Student er 18 eller eldre'])
         dataToReturn.isUnder18 = false
         dataToReturn.ansvarlig = subjectData.person.foreldreansvar
     }
@@ -148,6 +144,9 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         dataToReturn.isError = true
         dataToReturn.error = 'Must handle manually'
     }
+
+    // Generate a unique UUID for the current form submission so we can use this later to match with the signed document
+    dataToReturn.uuid = crypto.randomUUID()
 
     if(onlyAnsvarlig === 'true') {
         return dataToReturn.ansvarlig
