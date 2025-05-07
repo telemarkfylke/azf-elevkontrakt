@@ -172,8 +172,8 @@ const postFormInfo = async (formInfo, isMock) => {
     // Poster dokument til riktig collection
     try {
         let result
-        if(document.isError === 'true'){
-            logger('info', [logPrefix, 'isError === true, poster dokument til error-collection', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+        if(document.isError === 'true' || document.isNonFixAbleError === 'true'){
+            logger('info', [logPrefix, 'isError === true eller isNonFixAbleError === true, poster dokument til error-collection', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
             const errorCollection = `${mongoDBErrorCollection}`
             result = await mongoClient.db(mongoDB.dbName).collection(errorCollection).insertOne(document)
         } else {
