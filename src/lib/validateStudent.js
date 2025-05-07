@@ -14,6 +14,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         logger('error', [logPrefix, 'Invalid SSN'])
         return {
             isError: true,
+            isNonFixAbleError: true,
             error: 'Invalid SSN'
         }
 
@@ -25,6 +26,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         logger('error', [logPrefix, 'Error fetching student data', error])
         return {
             isError: true,
+            isNonFixAbleError: false,
             error: 'Error fetching student data'
         }
     }
@@ -35,6 +37,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         logger('error', [logPrefix, 'Error fetching person data', error])
         return {
             isError: true,
+            isNonFixAbleError: false,
             error: 'Error fetching person data'
         }
     }
@@ -44,6 +47,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         logger('error', [logPrefix, 'Error fetching school info', error])
         return {
             isError: true,
+            isNonFixAbleError: false,
             error: 'Error fetching school info'
         }
         
