@@ -21,10 +21,16 @@ module.exports = {
         scope: process.env.FREG_SCOPE,
         endPoint: process.env.FREG_ENDPOINT_PERSON,
     },
+    krr: {
+        url: process.env.KRR_URL,
+        key: process.env.KRR_X_FUNCTIONS_KEY,
+    },
     mongoDB: {
         connectionString: process.env.MONGODB_CONNECTION_STRING,
         dbName: process.env.MONGODB_DB_NAME,
         errorCollection: process.env.MONGODB_ERROR_COLLECTION,
         contractsCollection: process.env.MONGODB_CONTRACTS_COLLECTION,
+        errorMockCollection: process.env.MONGODB_ERROR_MOCK_COLLECTION,
+        contractsMockCollection: process.env.MONGODB_CONTRACTS_MOCK_COLLECTION,
     }
 }

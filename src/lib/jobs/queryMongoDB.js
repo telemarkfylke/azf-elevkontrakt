@@ -4,63 +4,8 @@ const { person } = require("./queryFREG")
 const { getMongoClient } = require('../auth/mongoClient.js')
 const { mongoDB } = require("../../../config")
 const { getSchoolyear } = require("../helpers/getSchoolyear")
-
-
-
-const fillDocument = (formInfo, elevData, ansvarligData, error) => {
-    const document = {
-        uuid: formInfo.parseXml.result.ArchiveData.uuid,
-        isSigned: "false",
-        isFakturaSent: "false",
-        isError: formInfo.parseXml.result.ArchiveData.isError || 'Ukjent',
-        isUnder18: formInfo.parseXml.result.ArchiveData.isUnder18 || 'Ukjent',
-        gotAnsvarlig: formInfo.parseXml.result.ArchiveData.FnrForesatt.length > 0 ? "true" : "false",
-        isStudent: formInfo.parseXml.result.ArchiveData.SkoleOrgNr.length > 0 ? "true" : "false",
-        skoleOrgNr: formInfo.parseXml.result.ArchiveData.SkoleOrgNr || 'Ukjent',
-        unSignedskjemaInfo: {
-            refId: formInfo.refId,
-            acosName: formInfo.acosName ,
-            kontraktType: formInfo.parseXml.result.ArchiveData.typeKontrakt || 'Ukjent',
-            archiveDocumentNumber: formInfo.archive.result.DocumentNumber ,
-            createdTimeStamp: formInfo.createdTimeStamp || 'Ukjent',
-        },
-        signedSkjemaInfo: {
-            refId: 'Ukjent',
-            acosName: 'Ukjent',
-            kontraktType: 'Ukjent',
-            archiveDocumentNumber: 'Ukjent',
-            createdTimeStamp: 'Ukjent',
-        },
-        signedBy: {
-            navn: 'Ukjent',
-            fnr: 'Ukjent',
-        },
-        elevInfo: undefined,
-        ansvarligInfo: undefined,
-        fakturaInfo: {
-            // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate. 
-        },
-        error: error || [],
-    }
-    if(elevData?.status !== 404) {
-        document.elevInfo = {
-            navn: elevData.navn || 'Ukjent',
-            upn: elevData.upn || 'Ukjent',
-            fnr: formInfo.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
-            elevnr: elevData.elevnummer || 'Ukjent',
-            skole: elevData.elevforhold[0].basisgruppemedlemskap[0].skole.navn || 'Ukjent',
-            klasse: elevData.elevforhold[0].basisgruppemedlemskap[0].navn || 'Ukjent',
-            trinn: elevData.elevforhold[0].basisgruppemedlemskap[0].trinn || 'Ukjent',
-        }
-    }
-    if(ansvarligData !== undefined) {
-        document.ansvarligInfo = {
-            navn: ansvarligData.fulltnavn || 'Ukjent',
-            fnr: formInfo.parseXml.result.ArchiveData.FnrForesatt || 'Ukjent',
-        }
-    }
-    return document
-}
+const { fillDocument } = require("../documentSchema.js")
+const { ObjectId } = require("mongodb")
 
 const updateFormInfo = async (formInfo) => {
     /*
@@ -104,7 +49,7 @@ const updateFormInfo = async (formInfo) => {
     }
 
     const mongoClient = await getMongoClient()
-    const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}${getSchoolyear()}`).updateOne({ 'uuid': formInfo.parseXml.result.ArchiveData.uuid }, { $set: 
+    const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ 'uuid': formInfo.parseXml.result.ArchiveData.uuid }, { $set: 
         { 
             'isSigned': "true",
             'signedSkjemaInfo.refId': formInfo.refId,
@@ -131,88 +76,109 @@ const updateFormInfo = async (formInfo) => {
     }
 }
 
-const postFormInfo = async (formInfo) => {
+const postFormInfo = async (formInfo, isMock) => {
     /*
     *   Poster skjema til MongoDB usnignert.
     *   Unike nøkler som skal være søkbare, elevFnr og foreldreFnr (om elev er under 18).
     *   Poster skjema med isError === 'true' til MongoDB for å ha kontroll over de som feiler uansett feil.
     */
     const logPrefix = 'postFormInfo'
-
+    // Hvis isMock === true, skip validering, vi ønsker å poste mock data til db direkte
+    if(isMock !== true) {   
     // Valider formInfo
-    if(!formInfo){
-        logger('error', ['updateFormInfo', 'Mangler formInfo'])
-        return {status: 400, error: 'Mangler formInfo'}
-    }
-    if(!formInfo.parseXml.result.ArchiveData.refId){
-        logger('error', ['updateFormInfo', 'Mangler refId', `acosName: ${formInfo.acosName}`])
-        return {status: 400, error: 'Mangler refId', acosName: formInfo.acosName}
-    }
-    if(!formInfo.parseXml.result.ArchiveData.acosName){
-        logger('error', ['updateFormInfo', 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
-        return {status: 400, error: 'Mangler acosName', refId: formInfo.refId}
-    }
-    if(!formInfo.parseXml.result.ArchiveData.uuid) {
-        logger('error', ['updateFormInfo', 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        return {status: 400, error: 'Mangler UUID', refId: formInfo.refId, acosName: formInfo.acosName}
-    }
-    if(!formInfo.archive.result.DocumentNumber) {
-        logger('error', ['updateFormInfo', 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        return {status: 400, error: 'Mangler DocumentNumber', refId: formInfo.refId, acosName: formInfo.acosName}
-    }
-    if(!formInfo.parseXml.result.ArchiveData.FnrElev && !formInfo.parseXml.result.ArchiveData.FnrElev.length !== 11) {
-        logger('error', ['updateFormInfo', 'Mangler/Ugyldig FnrElev', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        return {status: 400, error: 'Mangler/Ugyldig FnrElev', refId: formInfo.refId, acosName: formInfo.acosName}
-    }
-    if(!formInfo.parseXml.result.ArchiveData.FnrForesatt && !formInfo.parseXml.result.ArchiveData.FnrForesatt.length !== 11) {
-        logger('error', ['updateFormInfo', 'Mangler/Ugyldig FnrForesatt', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        return {status: 400, error: 'Mangler/Ugyldig FnrForesatt', refId: formInfo.refId, acosName: formInfo.acosName}
+        if(!formInfo){
+            logger('error', ['updateFormInfo', 'Mangler formInfo'])
+            return {status: 400, error: 'Mangler formInfo'}
+        }
+        if(!formInfo.parseXml.result.ArchiveData.refId){
+            logger('error', ['updateFormInfo', 'Mangler refId', `acosName: ${formInfo.acosName}`])
+            return {status: 400, error: 'Mangler refId', acosName: formInfo.acosName}
+        }
+        if(!formInfo.parseXml.result.ArchiveData.acosName){
+            logger('error', ['updateFormInfo', 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
+            return {status: 400, error: 'Mangler acosName', refId: formInfo.refId}
+        }
+        if(!formInfo.parseXml.result.ArchiveData.uuid) {
+            logger('error', ['updateFormInfo', 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            return {status: 400, error: 'Mangler UUID', refId: formInfo.refId, acosName: formInfo.acosName}
+        }
+        if(!formInfo.archive.result.DocumentNumber) {
+            logger('error', ['updateFormInfo', 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            return {status: 400, error: 'Mangler DocumentNumber', refId: formInfo.refId, acosName: formInfo.acosName}
+        }
+        if(!formInfo.parseXml.result.ArchiveData.FnrElev && !formInfo.parseXml.result.ArchiveData.FnrElev.length !== 11) {
+            logger('error', ['updateFormInfo', 'Mangler/Ugyldig FnrElev', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            return {status: 400, error: 'Mangler/Ugyldig FnrElev', refId: formInfo.refId, acosName: formInfo.acosName}
+        }
+        if(!formInfo.parseXml.result.ArchiveData.FnrForesatt && !formInfo.parseXml.result.ArchiveData.FnrForesatt.length !== 11) {
+            logger('error', ['updateFormInfo', 'Mangler/Ugyldig FnrForesatt', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            return {status: 400, error: 'Mangler/Ugyldig FnrForesatt', refId: formInfo.refId, acosName: formInfo.acosName}
+        }
     }
 
     let elevData
     let ansvarligData
+    let document
     let error = []
-    if(formInfo.parseXml.result.ArchiveData.FnrElev) {
-        // Hent mer info om eleven
-        elevData = await student(formInfo.parseXml.result.ArchiveData.FnrElev)
-        logger('info', [logPrefix, 'Henter data om elev', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        if(elevData.status === 404) {
-            logger('info', [logPrefix, 'Elev ikke funnet i FINT, sjekker FREG', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-            elevData = await person(formInfo.parseXml.result.ArchiveData.FnrElev)
-            // Eleven er ikke funnet
-            if(elevData === undefined) {
-                logger('info', [logPrefix, 'Elev ikke funnet i FREG', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-                error.push({error: 'Elev ikke funnet', fnr: formInfo.parseXml.result.ArchiveData.FnrElev})
-            } else {
-                logger('info', [logPrefix, 'Elev ikke funnet i FINT, men vi fant data i FREG', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-                error.push({error: 'Elev ikke funnet i FINT, men vi fant data i FREG', fnr: formInfo.parseXml.result.ArchiveData.FnrElev})
+    // Sett docmunet = formInfo om isMock === true. Infoform er mock data
+    isMock === true ? document = formInfo : document = document
+    // Hvis isMock === true, skip henting av elev og ansvarlig data, vi ønsker å poste mock data til db direkte
+    if(isMock !== true) {
+        if(formInfo.parseXml.result.ArchiveData.FnrElev) {
+            // Hent mer info om eleven
+            elevData = await student(formInfo.parseXml.result.ArchiveData.FnrElev)
+            logger('info', [logPrefix, 'Henter data om elev', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            if(elevData.status === 404) {
+                logger('info', [logPrefix, 'Elev ikke funnet i FINT, sjekker FREG', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+                elevData = await person(formInfo.parseXml.result.ArchiveData.FnrElev)
+                // Eleven er ikke funnet
+                if(elevData === undefined) {
+                    logger('info', [logPrefix, 'Elev ikke funnet i FREG', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+                    error.push({error: 'Elev ikke funnet', fnr: formInfo.parseXml.result.ArchiveData.FnrElev})
+                } else {
+                    logger('info', [logPrefix, 'Elev ikke funnet i FINT, men vi fant data i FREG', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+                    error.push({error: 'Elev ikke funnet i FINT, men vi fant data i FREG', fnr: formInfo.parseXml.result.ArchiveData.FnrElev})
+                }
             }
         }
+    
+        if(formInfo.parseXml.result.ArchiveData.FnrForesatt) {
+            // Hent mer info om ansvarlig
+            logger('info', [logPrefix, 'Henter data om ansvarlig', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            ansvarligData = await person(formInfo.parseXml.result.ArchiveData.FnrForesatt)
+        }
+        if(ansvarligData === undefined) {
+            // Ansvarlig er ikke funnet
+            logger('info', [logPrefix, 'Ansvarlig ikke funnet', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            error.push({error: 'Ansvarlig ikke funnet', fnr: formInfo.parseXml.result.ArchiveData.FnrForesatt})
+        }
+    
+        document = fillDocument(formInfo, elevData, ansvarligData, error)
     }
-
-    if(formInfo.parseXml.result.ArchiveData.FnrForesatt) {
-        // Hent mer info om ansvarlig
-        logger('info', [logPrefix, 'Henter data om ansvarlig', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        ansvarligData = await person(formInfo.parseXml.result.ArchiveData.FnrForesatt)
-    }
-    if(ansvarligData === undefined) {
-        // Ansvarlig er ikke funnet
-        logger('info', [logPrefix, 'Ansvarlig ikke funnet', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        error.push({error: 'Ansvarlig ikke funnet', fnr: formInfo.parseXml.result.ArchiveData.FnrForesatt})
-    }
-
-    const document = fillDocument(formInfo, elevData, ansvarligData, error)
+  
     const mongoClient = await getMongoClient()
-    // Update the database
+
+
+    let mongoDBCollection
+    let mongoDBErrorCollection
+    // Velger collection basert på om det er mock eller ikke
+    if(isMock === true) {
+        mongoDBCollection = `${mongoDB.contractsMockCollection}`
+        mongoDBErrorCollection = `${mongoDB.errorMockCollection}`
+    } else {
+        mongoDBCollection = `${mongoDB.contractsCollection}`
+        mongoDBErrorCollection = `${mongoDB.errorCollection}`
+    }
+    // Poster dokument til riktig collection
     try {
         let result
         if(document.isError === 'true'){
             logger('info', [logPrefix, 'isError === true, poster dokument til error-collection', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-            const errorCollection = `${mongoDB.errorCollection}${getSchoolyear()}`
+            const errorCollection = `${mongoDBErrorCollection}`
             result = await mongoClient.db(mongoDB.dbName).collection(errorCollection).insertOne(document)
         } else {
             logger('info', [logPrefix, 'isError === false, poster dokument til kontrakter-collection', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-            const contractsCollection = `${mongoDB.contractsCollection}${getSchoolyear()}`
+            const contractsCollection = `${mongoDBCollection}`
             result = await mongoClient.db(mongoDB.dbName).collection(contractsCollection).insertOne(document)
         }
         return document
@@ -222,7 +188,91 @@ const postFormInfo = async (formInfo) => {
     }
 }
 
+const getDocuments = async (query, isMock) => {
+    const logPrefix = 'getDocuments'
+    const mongoClient = await getMongoClient()
+
+    let result
+    if(isMock === true) {
+        console.log('isMock:', isMock)
+        console.log('query:', query)
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).find(query).toArray()
+    } else {
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
+    }
+    if(result.length === 0) {
+        logger('info', [logPrefix, 'Fant ingen dokumenter'])
+        return {status: 404, error: 'Fant ingen dokumenter'}
+    } else {
+        logger('info', [logPrefix, `Fant ${result.length} dokumenter`])
+        return {status: 200, result}
+    }
+}
+
+const updateContractPCStatus = async (contract, isMock) => {
+    // Fields to update:
+    // pcInfo.releasedBy: "innlogget bruker"
+    // pcInfo.releasedDate: "timestamp"
+    // pceInfo.released: "true" 
+
+    // Find contract in collection using the provided ID
+    // Update the fields
+    // Return updated contract
+    const logPrefix = 'updateContractPCStatus'
+    const mongoClient = await getMongoClient()
+
+    let pcUpdateObject = {}
+    
+    // Check if contractID is provided
+    if(!contract.contractID) {
+        logger('error', [logPrefix, 'Mangler contractID'])
+        return {status: 400, error: 'Mangler contractID'}
+    }
+
+    // Check if releasePC or returnPC is provided
+    if(!contract.releasePC && !contract.returnPC) {
+        logger('error', [logPrefix, 'Mangler releasePC eller returnPC'])
+        return {status: 400, error: 'Mangler releasePC eller returnPC'}
+    }
+
+    // If releasePC or returnPC is provided, provide the correct info
+    if(contract.releasePC === true) {
+        logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, releasePC: ${contract.releasePC}`])
+        const releasePCInfo = {
+            'pcInfo.releasedBy': "innlogget bruker",
+            'pcInfo.releasedDate': new Date(),
+            'pcInfo.released': "true"
+        }
+        pcUpdateObject = releasePCInfo
+    } else if (contract.returnPC === true) {
+        logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, returnPC: ${contract.returnPC}`])
+        const returnPCInfo = {
+            'pcInfo.returnedBy': "innlogget bruker",
+            'pcInfo.returnedDate': new Date(),
+            'pcInfo.returned': "true"
+        }
+        pcUpdateObject = returnPCInfo
+    } else {
+        logger('error', [logPrefix, 'Mangler releasePC eller returnPC'])
+        return {status: 400, error: 'Mangler releasePC eller returnPC'}
+    }
+
+    let result 
+    if(isMock === true) {
+        // Update contract in mock collection
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ '_id': new ObjectId(contract.contractID) }, { $set: pcUpdateObject })
+        console.log(result)
+    } else {
+        // Update contract in collection
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(contract.contractID) }, { $set: pcUpdateObject })
+    }
+
+    return result
+}
+
 module.exports = {
     postFormInfo,
     updateFormInfo,
+    getDocuments,
+    updateContractPCStatus
 }

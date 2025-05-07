@@ -1,6 +1,7 @@
 const { logger } = require('@vtfk/logger')
 const { student, schoolInfo } = require('../lib/jobs/queryFINT.js')
 const { person } = require('../lib/jobs/queryFREG.js')
+const { lookupKRR } = require('../lib/jobs/queryKRR.js')
 
 const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     let studentData
@@ -74,9 +75,11 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                 adresse: schoolInfoData.postadresse?.adresselinje || null  // String
             }
         }, // Object
-        ansvarlig: [], // Array 
+        ansvarlig: [], // Array
+        ansvarligSomIkkeKanVarsles: [], // Array
         adressblock: undefined, // True/false
         isError: false, // True/false
+        isNonFixAbleError: false, // True/false
         error: '' // String
     }
 
@@ -86,7 +89,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         logger('info', [logPrefix, 'Fant ikke student i FINT, sjekker om vi finner noe persondata'])
         if(subjectData.person.foedselsEllerDNummer === null) {
             logger('info', [logPrefix, 'Fant ikke persondata, kan ikke prosessere'])
-            dataToReturn.isError = true
+            dataToReturn.isNonFixAbleError = true
             dataToReturn.error = 'No data found, cant process.'
         } else {
             logger('info', [logPrefix, 'Fant ikke student i FINT, men fant persondata'])
@@ -117,20 +120,55 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                 const foreldreansvarligData = await person(foreldreansvarlig.ansvarlig)
                 dataToReturn.ansvarlig.push(foreldreansvarligData)
             }
+            // Check if parent/guardian can be contacted digitally
+            logger('info', [logPrefix, 'Sjekker om foreldre/ansvarlig kan varsles digitalt'])
+            for (const ansvarlig of subjectData.person.foreldreansvar) {
+                try {
+                    const krrData = await lookupKRR([ansvarlig.ansvarlig])
+                    if(krrData.personer[0].varslingsstatus === 'KAN_IKKE_VARSLES') {
+                        dataToReturn.ansvarligSomIkkeKanVarsles.push(dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer === ansvarlig.ansvarlig))
+                        logger('info', [logPrefix, 'Foreldre/ansvarlig kan ikke varsles digitalt, ansvarlig er fjernet fra listen over ansvarlige'])
+                        // Remove the parent/guardian from the list of parents/guardians that can be contacted digitally
+                        dataToReturn.ansvarlig = dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer !== ansvarlig.ansvarlig)
+                    }
+                } catch (error) {
+                    logger('error', [logPrefix, 'Error fetching KRR data for foreldre/ansvarlig', error])
+                    dataToReturn.isError = true
+                    dataToReturn.error = 'Error fetching KRR data for foreldre/ansvarlig'
+                }
+            }
+            if(dataToReturn.ansvarlig.length === 0) {
+                logger('info', [logPrefix, 'Fant ingen foreldre/ansvarlig som kan varsles digitalt'])
+                dataToReturn.isNonFixAbleError = true
+                dataToReturn.gotAnsvarlig = false
+                dataToReturn.error = 'No foreldre/ansvarlig that can be contacted digitally'
+            }
+            if(dataToReturn.ansvarligSomIkkeKanVarsles.length > 0) {
+                logger('info', [logPrefix, `Fant: ${dataToReturn.ansvarligSomIkkeKanVarsles.length} foreldre/ansvarlig som ikke kan varsles digitalt`])
+                dataToReturn.gotAnsvarlig = true
+                dataToReturn.isNonFixAbleError = true
+            }
         } else {
             dataToReturn.ansvarlig = subjectData.person.foreldreansvar
             logger('info', [logPrefix, 'Student har ikke foreldre/ansvarlig'])
-            dataToReturn.isError = true
+            dataToReturn.isNonFixAbleError = true
             dataToReturn.error = 'No foreldre/ansvarlig found'
         }
     } else {
         logger('info', [logPrefix, 'Student er 18 eller eldre'])
+        // Check if student can be contacted digitally
+        const krrData = await lookupKRR([ssn])
+        if(krrData[0].varslingsstatus === 'KAN_IKKE_VARSLES') {
+            dataToReturn.isNonFixAbleError = true
+            logger('info', [logPrefix, 'Student kan ikke varsles digitalt'])
+            dataToReturn.error = 'Student kan ikke varsles digitalt'
+        }
         dataToReturn.isUnder18 = false
         dataToReturn.ansvarlig = subjectData.person.foreldreansvar
     }
     
     // Only run this check if theres no previous errors
-    if(dataToReturn.isError === undefined) {
+    if(dataToReturn.isNonFixAbleError === undefined) {
         // Check if student has adressblock
         if(subjectData.person?.bostedsadresse?.adressegradering !== 'ugradert') {
             // Should we handle this person??
@@ -141,7 +179,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     }
     // If we need to handle the person manually, we should return an error
     if(dataToReturn.adressblock === true) {
-        dataToReturn.isError = true
+        dataToReturn.isNonFixAbleError = true
         dataToReturn.error = 'Must handle manually'
     }
 
