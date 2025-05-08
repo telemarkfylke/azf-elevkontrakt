@@ -129,11 +129,18 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
             for (const ansvarlig of subjectData.person.foreldreansvar) {
                 try {
                     const krrData = await lookupKRR([ansvarlig.ansvarlig])
-                    if(krrData.personer[0].varslingsstatus === 'KAN_IKKE_VARSLES') {
+                    if(krrData.personer[0]?.varslingsstatus === 'KAN_IKKE_VARSLES') {
                         dataToReturn.ansvarligSomIkkeKanVarsles.push(dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer === ansvarlig.ansvarlig))
                         logger('info', [logPrefix, 'Foreldre/ansvarlig kan ikke varsles digitalt, ansvarlig er fjernet fra listen over ansvarlige'])
                         // Remove the parent/guardian from the list of parents/guardians that can be contacted digitally
                         dataToReturn.ansvarlig = dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer !== ansvarlig.ansvarlig)
+                    } else if(krrData.personer[0]?.varslingsstatus === 'KAN_VARSLES') {
+                        logger('info', [logPrefix, 'Foreldre/ansvarlig kan varsles digitalt'])
+                    } else {
+                        logger('warn', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
+                        dataToReturn.isError = true
+                        dataToReturn.error = 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'
+                        dataToReturn.ansvarlig = []
                     }
                 } catch (error) {
                     logger('error', [logPrefix, 'Error fetching KRR data for foreldre/ansvarlig', error])
@@ -161,14 +168,28 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } else {
         logger('info', [logPrefix, 'Student er 18 eller eldre'])
         // Check if student can be contacted digitally
-        const krrData = await lookupKRR([ssn])
-        if(krrData[0].varslingsstatus === 'KAN_IKKE_VARSLES') {
-            dataToReturn.isNonFixAbleError = true
-            logger('info', [logPrefix, 'Student kan ikke varsles digitalt'])
-            dataToReturn.error = 'Student kan ikke varsles digitalt'
+        try {
+            const krrData = await lookupKRR([ssn])
+            if(krrData?.personer[0]?.varslingsstatus === 'KAN_VARSLES') {
+                logger('info', [logPrefix, 'Student kan varsles digitalt'])
+                dataToReturn.ansvarlig = subjectData.person.foreldreansvar
+            } else if(krrData?.personer[0]?.varslingsstatus === 'KAN_IKKE_VARSLES') {
+                dataToReturn.isNonFixAbleError = true
+                logger('info', [logPrefix, 'Student kan ikke varsles digitalt'])
+                dataToReturn.error = 'Student kan ikke varsles digitalt'
+                dataToReturn.ansvarlig = []
+            } else {
+                logger('warn', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
+                dataToReturn.isError = true
+                dataToReturn.error = 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'
+                dataToReturn.ansvarlig = []
+            }
+            dataToReturn.isUnder18 = false
+        } catch (error) {
+            logger('error', [logPrefix, 'Error fetching KRR data for student >= 18 years', error])
+            dataToReturn.isError = true
+            dataToReturn.error = 'Error fetching KRR data for student >= 18 years'
         }
-        dataToReturn.isUnder18 = false
-        dataToReturn.ansvarlig = subjectData.person.foreldreansvar
     }
     
     // Only run this check if theres no previous errors
