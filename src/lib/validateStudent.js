@@ -2,6 +2,7 @@ const { logger } = require('@vtfk/logger')
 const { student, schoolInfo } = require('../lib/jobs/queryFINT.js')
 const { person } = require('../lib/jobs/queryFREG.js')
 const { lookupKRR } = require('../lib/jobs/queryKRR.js')
+const { schoolInfoList } = require('./datasources/tfk-schools.js')
 
 const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     let studentData
@@ -43,6 +44,16 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     }
     try {
         schoolInfoData = await schoolInfo(await studentData.elevforhold[0].skole.organisasjonsId)
+        schoolInfoData.organisasjonsnummer = schoolInfoList.find(school => school.officeLocation.toString() === schoolInfoData.navn).orgNr
+        if(schoolInfoData.organisasjonsnummer === undefined) {
+            logger('error', [logPrefix, 'Fant ikke organisasjonsnummer for skolen', schoolInfoData.navn])
+            return {
+                isError: false,
+                isNonFixAbleError: true,
+                error: 'Fant ikke organisasjonsnummer for skolen'
+            }
+        }
+        console.log(schoolInfoData)
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching school info', error])
         return {
