@@ -126,7 +126,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
             }
             // Check if parent/guardian can be contacted digitally
             logger('info', [logPrefix, 'Sjekker om foreldre/ansvarlig kan varsles digitalt'])
-            for (const ansvarlig of subjectData.person.foreldreansvar) {
+            for (const [i, ansvarlig] of subjectData.person.foreldreansvar.entries()) {
                 try {
                     const krrData = await lookupKRR([ansvarlig.ansvarlig])
                     if(krrData.personer[0]?.varslingsstatus === 'KAN_IKKE_VARSLES') {
@@ -136,6 +136,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                         dataToReturn.ansvarlig = dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer !== ansvarlig.ansvarlig)
                     } else if(krrData.personer[0]?.varslingsstatus === 'KAN_VARSLES') {
                         logger('info', [logPrefix, 'Foreldre/ansvarlig kan varsles digitalt'])
+                        dataToReturn.ansvarlig[i].krrData = krrData.personer[0]
                     } else {
                         logger('warn', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
                         dataToReturn.isError = true
