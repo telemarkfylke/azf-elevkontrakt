@@ -18,7 +18,6 @@ app.http('handleDbRequest', {
             //Build a valid query object
             let query = {}
             if(request.query.get('school')) {
-                console.log('school:', request.query.get('school'))
                 // Push the school query to the query object
                 query['elevInfo.skole'] = request.query.get('school')
             }   

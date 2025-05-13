@@ -194,8 +194,6 @@ const getDocuments = async (query, isMock) => {
 
     let result
     if(isMock === true) {
-        console.log('isMock:', isMock)
-        console.log('query:', query)
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).find(query).toArray()
     } else {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
@@ -261,7 +259,6 @@ const updateContractPCStatus = async (contract, isMock) => {
     if(isMock === true) {
         // Update contract in mock collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ '_id': new ObjectId(contract.contractID) }, { $set: pcUpdateObject })
-        console.log(result)
     } else {
         // Update contract in collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(contract.contractID) }, { $set: pcUpdateObject })

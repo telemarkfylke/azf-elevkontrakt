@@ -53,7 +53,6 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                 error: 'Fant ikke organisasjonsnummer for skolen'
             }
         }
-        console.log(schoolInfoData)
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching school info', error])
         return {
