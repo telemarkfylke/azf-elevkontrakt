@@ -33,7 +33,7 @@ const getBillingYear = (rate) => {
  */
 const fillDocument = (formInfo, elevData, ansvarligData, error) => {
     const document = {
-        uuid: formInfo.parseXml.result.ArchiveData.uuid,
+        uuid: formInfo.parseXml.result.ArchiveData.uuid || 'Ukjent',
         generatedTimeStamp: new Date().toISOString(),
         isSigned: "false",
         isFakturaSent: "false",
@@ -43,10 +43,10 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
         isStudent: formInfo.parseXml.result.ArchiveData.SkoleOrgNr.length > 0 ? "true" : "false",
         skoleOrgNr: formInfo.parseXml.result.ArchiveData.SkoleOrgNr || 'Ukjent',
         unSignedskjemaInfo: {
-            refId: formInfo.refId,
-            acosName: formInfo.acosName ,
+            refId: formInfo.refId || 'Ukjent',
+            acosName: formInfo.acosName || 'Ukjent',
             kontraktType: formInfo.parseXml.result.ArchiveData.typeKontrakt || 'Ukjent',
-            archiveDocumentNumber: formInfo.archive.result.DocumentNumber ,
+            archiveDocumentNumber: formInfo.archive.result.DocumentNumber || 'Ukjent',
             createdTimeStamp: formInfo.createdTimeStamp || 'Ukjent',
         },
         signedSkjemaInfo: {

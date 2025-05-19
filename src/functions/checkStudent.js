@@ -13,7 +13,8 @@ app.http('checkStudent', {
         const onlyAnsvarlig = request.params.onlyAnsvarlig
         // Validate the token 
         const authorizationHeader = request.headers.get('authorization')
-        if(!validateRoles(authorizationHeader, ['elevkontrakt.read'])) {
+        // TODO Rydde litt i rollene :)
+        if(!validateRoles(authorizationHeader, ['elevkontrakt.read', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.administrator-readwrite'])) {
             logger('warn', ['checkStudent', 'Unauthorized access attempt'])
             return { status: 403, body: 'Forbidden' }
         } else {
