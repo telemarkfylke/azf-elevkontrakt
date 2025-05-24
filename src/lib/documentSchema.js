@@ -65,21 +65,21 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
         fakturaInfo: {
             rate1: {
                 // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate. 
-                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leiekontrakt' ? getBillingYear(1) : 'Utlån faktureres ikke',
+                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
                 faktureringsDato: undefined,
                 status: 'Ikke Fakturert',
                 løpenummer: undefined
             },
             rate2: {
                 // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leiekontrakt' ? getBillingYear(2) : 'Utlån faktureres ikke', 
+                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke', 
                 faktureringsDato: undefined,
                 status: 'Ikke Fakturert',
                 løpenummer: undefined
             },
             rate3: {
                 // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leiekontrakt' ? getBillingYear(3) : 'Utlån faktureres ikke',
+                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
                 faktureringsDato: undefined,
                 status: 'Ikke Fakturert',
                 løpenummer: undefined

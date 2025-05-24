@@ -39,7 +39,7 @@ const schools = [
 const generateFormInfoUnsigned = (randomIndex, elevFnr, ansvarligFnr, isUnder18) => {
     const formInfo = {
         refId: Math.floor(1000000 + Math.random() * 9000000).toString(), // Random 7-digit number, to simulate refId
-        acosName: 'Elevkontrakt usignert',
+        acosName: 'Elevavtale usignert',
         createdTimeStamp: new Date(new Date().setDate(new Date().getDate() + Math.random(1)*9)), // Random date today +1 to 9 days
         archive: {
             result: {
@@ -54,7 +54,7 @@ const generateFormInfoUnsigned = (randomIndex, elevFnr, ansvarligFnr, isUnder18)
                     isUnder18: isUnder18,
                     FnrForesatt: isUnder18 === "true" ? ansvarligFnr : '',
                     SkoleOrgNr: schools[randomIndex].orgNr,
-                    typeKontrakt: 'leiekontrakt',
+                    typeKontrakt: 'leieavtale',
                     FnrElev: elevFnr
                 }
             }
@@ -78,8 +78,8 @@ const generateFormInfoUnsigned = (randomIndex, elevFnr, ansvarligFnr, isUnder18)
 */
 const generateFormInfoSigned = (unSignedForm) => {
     unSignedForm.isSigned = "true"
-    unSignedForm.signedSkjemaInfo.acosName = 'Elevkontrakt signert'
-    unSignedForm.signedSkjemaInfo.kontraktType = "leiekontrakt - signert"
+    unSignedForm.signedSkjemaInfo.acosName = 'Elevavtale signert'
+    unSignedForm.signedSkjemaInfo.kontraktType = "leieavtale - signert"
     unSignedForm.signedSkjemaInfo.refId = Math.floor(1000000 + Math.random() * 9000000).toString()
     unSignedForm.signedSkjemaInfo.createdTimeStamp = new Date(new Date().setDate(new Date().getDate() + Math.random(1)*9)) // Random date today +1 to 9 days
     unSignedForm.signedSkjemaInfo.archiveDocumentNumber = `${new Date().getFullYear().toString().split(0)[1]}/${Math.floor(10000 + Math.random() * 90000)}-${Math.floor(10 + Math.random() * 90)}` // Random archive number to simulate archive number
