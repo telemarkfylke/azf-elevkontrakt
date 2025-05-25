@@ -45,7 +45,7 @@ app.http('handleDbRequest', {
             } else {
                 const jsonBody = await request.json()
                 if(request.method === 'POST') {
-                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite'])) {
+                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.read'])) {
                         logger('warn', [`${logPrefix} - POST`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
@@ -60,7 +60,7 @@ app.http('handleDbRequest', {
                         }
                     }
                 } else if(request.method === 'PUT') {
-                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite'])) {
+                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.read'])) {
                         logger('warn', [`${logPrefix} - PUT`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
