@@ -23,7 +23,7 @@ app.http('handleDbRequest', {
             }   
                      
             // Check roles/school provided in the query string
-            if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.read'])) {
+            if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.read', 'elevkontrakt.readwrite'])) {
                 if(!request.query.get('school')) {
                     logger('warn', [`${logPrefix} - PUT`, 'Unauthorized access attempt'])
                     return { status: 403, body: 'Forbidden' }
@@ -45,7 +45,7 @@ app.http('handleDbRequest', {
             } else {
                 const jsonBody = await request.json()
                 if(request.method === 'POST') {
-                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.read'])) {
+                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite'])) {
                         logger('warn', [`${logPrefix} - POST`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
@@ -60,7 +60,7 @@ app.http('handleDbRequest', {
                         }
                     }
                 } else if(request.method === 'PUT') {
-                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.read'])) {
+                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.readwrite'])) {
                         logger('warn', [`${logPrefix} - PUT`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
