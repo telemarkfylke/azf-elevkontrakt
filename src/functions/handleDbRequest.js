@@ -55,7 +55,7 @@ app.http('handleDbRequest', {
                             const result = await postFormInfo(jsonBody);
                             return { status: 200, jsonBody: result }
                         } catch (error) {
-                            logger('error', [logPrefix, `Error ved oppretting av dokument med UUID:${jsonBody.parseXml.result.ArchiveData.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`, error])
+                            logger('error', [logPrefix, `Error ved oppretting av dokument med UUID:${jsonBody.parseXml?.result?.ArchiveData?.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`, error])
                             return { status: 500, error }
                         }
                     }

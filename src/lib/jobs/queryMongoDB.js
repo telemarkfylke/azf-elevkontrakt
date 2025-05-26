@@ -19,11 +19,11 @@ const updateFormInfo = async (formInfo) => {
         logger('error', [logPrefix, 'Mangler formInfo'])
         return {status: 400, error: 'Mangler formInfo'}
     }
-    if(!formInfo.parseXml.result.ArchiveData.refId){
+    if(!formInfo.refId){
         logger('error', [logPrefix, 'Mangler refId', `acosName: ${formInfo.acosName}`])
         return {status: 400, error: 'Mangler refId', acosName: formInfo.acosName}
     }
-    if(!formInfo.parseXml.result.ArchiveData.acosName){
+    if(!formInfo.acosName){
         logger('error', [logPrefix, 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
         return {status: 400, error: 'Mangler acosName', refId: formInfo.refId}
     }
@@ -31,15 +31,12 @@ const updateFormInfo = async (formInfo) => {
         logger('error', [logPrefix, 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
         return {status: 400, error: 'Mangler UUID', refId: formInfo.refId, acosName: formInfo.acosName}
     }
-    if(!formInfo.archive.result.DocumentNumber) {
-        logger('error', [logPrefix, 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        return {status: 400, error: 'Mangler DocumentNumber', refId: formInfo.refId, acosName: formInfo.acosName}
+    if(formInfo?.archive) {
+        if(!formInfo.archive.result.DocumentNumber) {
+            logger('error', [logPrefix, 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            return {status: 400, error: 'Mangler DocumentNumber', refId: formInfo.refId, acosName: formInfo.acosName}
+        }
     }
-    if(!formInfo.parseXml.result.ArchiveData.FnrForesatt && !formInfo.parseXml.result.ArchiveData.FnrForesatt.length !== 11) {
-        logger('error', [logPrefix, 'Mangler/Ugyldig FnrForesatt', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-        return {status: 400, error: 'Mangler/Ugyldig FnrForesatt', refId: formInfo.refId, acosName: formInfo.acosName}
-    }
-
 
     let ansvarligData
     if(formInfo.parseXml.result.ArchiveData.FnrForesatt) {
@@ -90,30 +87,25 @@ const postFormInfo = async (formInfo, isMock) => {
             logger('error', ['updateFormInfo', 'Mangler formInfo'])
             return {status: 400, error: 'Mangler formInfo'}
         }
-        if(!formInfo.parseXml.result.ArchiveData.refId){
+        if(!formInfo.refId){
             logger('error', ['updateFormInfo', 'Mangler refId', `acosName: ${formInfo.acosName}`])
             return {status: 400, error: 'Mangler refId', acosName: formInfo.acosName}
         }
-        if(!formInfo.parseXml.result.ArchiveData.acosName){
+        if(!formInfo.acosName){
             logger('error', ['updateFormInfo', 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
             return {status: 400, error: 'Mangler acosName', refId: formInfo.refId}
         }
-        if(!formInfo.parseXml.result.ArchiveData.uuid) {
+        if(!formInfo.parseXml.result.ArchiveData.uuid && (!formInfo.parseXml.result.ArchiveData.isError === "true" || !formInfo.parseXml.result.ArchiveData.isNonFixAbleError === "true")) {
             logger('error', ['updateFormInfo', 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
             return {status: 400, error: 'Mangler UUID', refId: formInfo.refId, acosName: formInfo.acosName}
         }
-        if(!formInfo.archive.result.DocumentNumber) {
-            logger('error', ['updateFormInfo', 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-            return {status: 400, error: 'Mangler DocumentNumber', refId: formInfo.refId, acosName: formInfo.acosName}
+        if(formInfo?.archive) {
+            if(!formInfo.archive.result.DocumentNumber) {
+                logger('error', ['updateFormInfo', 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+                return {status: 400, error: 'Mangler DocumentNumber', refId: formInfo.refId, acosName: formInfo.acosName}
+            }
         }
-        if(!formInfo.parseXml.result.ArchiveData.FnrElev && !formInfo.parseXml.result.ArchiveData.FnrElev.length !== 11) {
-            logger('error', ['updateFormInfo', 'Mangler/Ugyldig FnrElev', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-            return {status: 400, error: 'Mangler/Ugyldig FnrElev', refId: formInfo.refId, acosName: formInfo.acosName}
-        }
-        if(!formInfo.parseXml.result.ArchiveData.FnrForesatt && !formInfo.parseXml.result.ArchiveData.FnrForesatt.length !== 11) {
-            logger('error', ['updateFormInfo', 'Mangler/Ugyldig FnrForesatt', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
-            return {status: 400, error: 'Mangler/Ugyldig FnrForesatt', refId: formInfo.refId, acosName: formInfo.acosName}
-        }
+        
     }
 
     let elevData

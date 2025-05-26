@@ -37,16 +37,16 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
         generatedTimeStamp: new Date().toISOString(),
         isSigned: "false",
         isFakturaSent: "false",
-        isError: formInfo.parseXml.result.ArchiveData.isError || 'Ukjent',
-        isUnder18: formInfo.parseXml.result.ArchiveData.isUnder18 || 'Ukjent',
-        gotAnsvarlig: formInfo.parseXml.result.ArchiveData.FnrForesatt.length > 0 ? "true" : "false",
-        isStudent: formInfo.parseXml.result.ArchiveData.SkoleOrgNr.length > 0 ? "true" : "false",
-        skoleOrgNr: formInfo.parseXml.result.ArchiveData.SkoleOrgNr || 'Ukjent',
+        isError: formInfo.parseXml.result.ArchiveData?.isError || 'Ukjent',
+        isUnder18: formInfo.parseXml.result.ArchiveData?.isUnder18 || 'Ukjent',
+        gotAnsvarlig: formInfo.parseXml.result.ArchiveData.FnrForesatt?.length > 0 ? "true" : "false" || 'Ukjent',
+        isStudent: formInfo.parseXml.result.ArchiveData.SkoleOrgNr?.length > 0 ? "true" : "false" || 'Ukjent', 
+        skoleOrgNr: formInfo.parseXml.result.ArchiveData?.SkoleOrgNr || 'Ukjent',
         unSignedskjemaInfo: {
             refId: formInfo.refId || 'Ukjent',
             acosName: formInfo.acosName || 'Ukjent',
             kontraktType: formInfo.parseXml.result.ArchiveData.typeKontrakt || 'Ukjent',
-            archiveDocumentNumber: formInfo.archive.result.DocumentNumber || 'Ukjent',
+            archiveDocumentNumber: formInfo.archive?.result.DocumentNumber || 'Ukjent',
             createdTimeStamp: formInfo.createdTimeStamp || 'Ukjent',
         },
         signedSkjemaInfo: {
@@ -100,16 +100,22 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
             navn: elevData.navn || 'Ukjent',
             upn: elevData.upn || 'Ukjent',
             fnr: formInfo.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
-            elevnr: elevData.elevnummer || 'Ukjent',
-            skole: elevData.elevforhold[0].basisgruppemedlemskap[0].skole.navn || 'Ukjent',
-            klasse: elevData.elevforhold[0].basisgruppemedlemskap[0].navn || 'Ukjent',
-            trinn: elevData.elevforhold[0].basisgruppemedlemskap[0].trinn || 'Ukjent',
+            elevnr: elevData?.elevnummer || 'Ukjent',
+        }
+        if(elevData?.elevforhold === undefined) {
+            document.elevInfo.skole = 'Ukjent';
+            document.elevInfo.klasse = 'Ukjent';
+            document.elevInfo.trinn = 'Ukjent';
+        } else {
+            document.elevInfo.skole = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.skole?.navn || 'Ukjent'
+            document.elevInfo.klasse = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.navn || 'Ukjent'
+            document.elevInfo.trinn = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.trinn || 'Ukjent'
         }
     }
     if(ansvarligData !== undefined) {
         document.ansvarligInfo = {
-            navn: ansvarligData.fulltnavn || 'Ukjent',
-            fnr: formInfo.parseXml.result.ArchiveData.FnrForesatt || 'Ukjent',
+            navn: ansvarligData?.fulltnavn || 'Ukjent',
+            fnr: formInfo.parseXml.result.ArchiveData?.FnrForesatt || 'Ukjent',
         }
     }
     return document
