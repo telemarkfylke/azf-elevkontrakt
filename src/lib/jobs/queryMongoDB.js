@@ -84,24 +84,24 @@ const postFormInfo = async (formInfo, isMock) => {
     if(isMock !== true) {   
     // Valider formInfo
         if(!formInfo){
-            logger('error', ['updateFormInfo', 'Mangler formInfo'])
+            logger('error', [logPrefix, 'Mangler formInfo'])
             return {status: 400, error: 'Mangler formInfo'}
         }
         if(!formInfo.refId){
-            logger('error', ['updateFormInfo', 'Mangler refId', `acosName: ${formInfo.acosName}`])
+            logger('error', [logPrefix, 'Mangler refId', `acosName: ${formInfo.acosName}`])
             return {status: 400, error: 'Mangler refId', acosName: formInfo.acosName}
         }
         if(!formInfo.acosName){
-            logger('error', ['updateFormInfo', 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
+            logger('error', [logPrefix, 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
             return {status: 400, error: 'Mangler acosName', refId: formInfo.refId}
         }
         if(!formInfo.parseXml.result.ArchiveData.uuid && (!formInfo.parseXml.result.ArchiveData.isError === "true" || !formInfo.parseXml.result.ArchiveData.isNonFixAbleError === "true")) {
-            logger('error', ['updateFormInfo', 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+            logger('error', [logPrefix, 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
             return {status: 400, error: 'Mangler UUID', refId: formInfo.refId, acosName: formInfo.acosName}
         }
         if(formInfo?.archive) {
             if(!formInfo.archive.result.DocumentNumber) {
-                logger('error', ['updateFormInfo', 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
+                logger('error', [logPrefix, 'Mangler DocumentNumber', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
                 return {status: 400, error: 'Mangler DocumentNumber', refId: formInfo.refId, acosName: formInfo.acosName}
             }
         }
