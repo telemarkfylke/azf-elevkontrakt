@@ -37,6 +37,7 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
         generatedTimeStamp: new Date().toISOString(),
         isSigned: "false",
         isFakturaSent: "false",
+        isImportedToXledger: "false",
         isError: formInfo.parseXml.result.ArchiveData?.isError || 'Ukjent',
         isUnder18: formInfo.parseXml.result.ArchiveData?.isUnder18 || 'Ukjent',
         gotAnsvarlig: formInfo.parseXml.result.ArchiveData.FnrForesatt?.length > 0 ? "true" : "false" || 'Ukjent',
