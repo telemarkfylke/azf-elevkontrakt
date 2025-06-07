@@ -10,10 +10,37 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     let schoolInfoData
     const logPrefix = 'validateStudentInfo'
 
+    const dummyObjectForAcos = {
+        isUnder18: null,
+        isStudent: null,
+        gotAnsvarlig: null,
+        uuid: null,
+        gotSchoolName: false,
+        gotSchoolEpost: false,
+        gotSchoolTelefon: false,
+        gotSchoolAdresse: false,
+        gotSchoolOrgNr: false,
+        schoolInfo: {
+            navn: null,
+            epost: null,
+            telefon: null,
+            orgnr: null,
+            adresse: {
+                postnummer: null,
+                poststed: null,
+                adresse: null
+            }
+        },
+        ansvarlig: [],
+        ansvarligSomIkkeKanVarsles: [],
+        adressblock: undefined,
+    }
+
     // Validate SSN
     if(ssn.length !== 11 || isNaN(ssn)) {
         logger('error', [logPrefix, 'Invalid SSN'])
         return {
+            ...dummyObjectForAcos,
             isError: true,
             isNonFixAbleError: true,
             error: 'Invalid SSN'
@@ -26,6 +53,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching student data', error])
         return {
+            ...dummyObjectForAcos,
             isError: true,
             isNonFixAbleError: false,
             error: 'Error fetching student data'
@@ -37,6 +65,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching person data', error])
         return {
+            ...dummyObjectForAcos,
             isError: true,
             isNonFixAbleError: false,
             error: 'Error fetching person data'
@@ -48,6 +77,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         if(schoolInfoData.organisasjonsnummer === undefined) {
             logger('error', [logPrefix, 'Fant ikke organisasjonsnummer for skolen', schoolInfoData.navn])
             return {
+                ...dummyObjectForAcos,
                 isError: false,
                 isNonFixAbleError: true,
                 error: 'Fant ikke organisasjonsnummer for skolen'
@@ -56,9 +86,10 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching school info', error])
         return {
-            isError: true,
-            isNonFixAbleError: false,
-            error: 'Error fetching school info'
+                ...dummyObjectForAcos,
+                isError: true,
+                isNonFixAbleError: false,
+                error: 'Error fetching school info'
         }
         
     } 
