@@ -11,17 +11,17 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     const logPrefix = 'validateStudentInfo'
 
     const dummyObjectForAcos = {
-        isUnder18: null,
-        isStudent: null,
-        gotAnsvarlig: null,
-        uuid: null,
+        isUnder18: false,
+        isStudent: false,
+        gotAnsvarlig: false,
+        uuid: "null",
         gotSchoolName: false,
         gotSchoolEpost: false,
         gotSchoolTelefon: false,
         gotSchoolAdresse: false,
         gotSchoolOrgNr: false,
         schoolInfo: {
-            navn: null,
+            navn: "null",
             epost: null,
             telefon: null,
             orgnr: null,
