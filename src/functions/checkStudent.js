@@ -19,7 +19,13 @@ app.http('checkStudent', {
             return { status: 403, body: 'Forbidden' }
         } else {
             const data = await validateStudentInfo(ssn, onlyAnsvarlig)
-            return { jsonBody: data };
+            let status = 200
+            if(data.isError) {
+                status = 400
+            } else if(data.isNonFixAbleError) {
+                status = 500
+            }
+            return { status: data?.status || status, jsonBody: data?.body || data };
         }
     }
 });

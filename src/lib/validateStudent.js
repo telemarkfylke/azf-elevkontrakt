@@ -40,10 +40,13 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     if(ssn.length !== 11 || isNaN(ssn)) {
         logger('error', [logPrefix, 'Invalid SSN'])
         return {
-            ...dummyObjectForAcos,
-            isError: true,
-            isNonFixAbleError: true,
-            error: 'Invalid SSN'
+            status: 400,
+            body: {
+                ...dummyObjectForAcos,
+                isError: true,
+                isNonFixAbleError: true,
+                error: 'Invalid SSN'
+            }
         }
 
     }
@@ -53,10 +56,13 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching student data', error])
         return {
-            ...dummyObjectForAcos,
-            isError: true,
-            isNonFixAbleError: false,
-            error: 'Error fetching student data'
+            status: 400,
+            body: {
+                ...dummyObjectForAcos,
+                isError: true,
+                isNonFixAbleError: false,
+                error: 'Error fetching student data'
+            }
         }
     }
     
@@ -65,10 +71,13 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching person data', error])
         return {
-            ...dummyObjectForAcos,
-            isError: true,
-            isNonFixAbleError: false,
-            error: 'Error fetching person data'
+            status: 400,
+            body: {
+                ...dummyObjectForAcos,
+                isError: true,
+                isNonFixAbleError: false,
+                error: 'Error fetching person data'
+            }
         }
     }
     try {
@@ -77,21 +86,26 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         if(schoolInfoData.organisasjonsnummer === undefined) {
             logger('error', [logPrefix, 'Fant ikke organisasjonsnummer for skolen', schoolInfoData.navn])
             return {
-                ...dummyObjectForAcos,
-                isError: false,
-                isNonFixAbleError: true,
-                error: 'Fant ikke organisasjonsnummer for skolen'
+                status: 400,
+                body: {
+                    ...dummyObjectForAcos,
+                    isError: false,
+                    isNonFixAbleError: true,
+                    error: 'Fant ikke organisasjonsnummer for skolen'
+                }
             }
         }
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching school info', error])
         return {
+            status: 400,
+            body: {
                 ...dummyObjectForAcos,
                 isError: true,
                 isNonFixAbleError: false,
                 error: 'Error fetching school info'
-        }
-        
+            }
+        } 
     } 
 
     const subjectData = {
@@ -214,7 +228,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
             const krrData = await lookupKRR([ssn])
             if(krrData?.personer[0]?.varslingsstatus === 'KAN_VARSLES') {
                 logger('info', [logPrefix, 'Student kan varsles digitalt'])
-                dataToReturn.ansvarlig = subjectData.person.foreldreansvar
+                dataToReturn.ansvarlig.push({fulltnavn: subjectData.person.fulltnavn, foedselsEllerDNummer: subjectData.person.foedselsEllerDNummer, krrData: krrData.personer[0]})
             } else if(krrData?.personer[0]?.varslingsstatus === 'KAN_IKKE_VARSLES') {
                 dataToReturn.isNonFixAbleError = true
                 logger('info', [logPrefix, 'Student kan ikke varsles digitalt'])
