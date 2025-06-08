@@ -4,7 +4,7 @@ const { person } = require('../lib/jobs/queryFREG.js')
 const { lookupKRR } = require('../lib/jobs/queryKRR.js')
 const { schoolInfoList } = require('./datasources/tfk-schools.js')
 
-const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
+const validateStudentInfo = async (ssn, onlyAnsvarlig, version) => {
     let studentData
     let personData
     let schoolInfoData
@@ -256,7 +256,11 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     if(onlyAnsvarlig === 'true') {
         return dataToReturn.ansvarlig
     } else {
-        return dataToReturn
+        if(version === 'v2') {
+            return [dataToReturn]
+        } else {
+            return dataToReturn
+        }
     }
 }
 
