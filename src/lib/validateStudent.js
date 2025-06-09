@@ -40,7 +40,6 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     if(ssn.length !== 11 || isNaN(ssn)) {
         logger('error', [logPrefix, 'Invalid SSN'])
         return {
-            status: 400,
             body: {
                 ...dummyObjectForAcos,
                 isError: true,
@@ -56,7 +55,6 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching student data', error])
         return {
-            status: 400,
             body: {
                 ...dummyObjectForAcos,
                 isError: true,
@@ -71,7 +69,6 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching person data', error])
         return {
-            status: 400,
             body: {
                 ...dummyObjectForAcos,
                 isError: true,
@@ -86,7 +83,6 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         if(schoolInfoData.organisasjonsnummer === undefined) {
             logger('error', [logPrefix, 'Fant ikke organisasjonsnummer for skolen', schoolInfoData.navn])
             return {
-                status: 400,
                 body: {
                     ...dummyObjectForAcos,
                     isError: false,
@@ -98,7 +94,6 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     } catch (error) {
         logger('error', [logPrefix, 'Error fetching school info', error])
         return {
-            status: 400,
             body: {
                 ...dummyObjectForAcos,
                 isError: true,
