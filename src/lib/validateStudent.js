@@ -111,7 +111,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     const dataToReturn = {
         isUnder18: undefined, // True/false
         isStudent: undefined, // True/false
-        gotAnsvarlig: undefined, // True/false
+        gotAnsvarlig: false, // True/false
         uuid: undefined, // String
         gotSchoolName: schoolInfoData.navn === null ? false : true, // True/false
         gotSchoolEpost: schoolInfoData.kontaktEpostadresse === null ? false : true, // True/false
