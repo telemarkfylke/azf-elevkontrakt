@@ -61,6 +61,10 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
             navn: 'Ukjent',
             fnr: 'Ukjent',
         },
+        xLedgerImportInfo: {
+            importStatus: 'false',
+            importDate: 'Ukjent',
+        },
         elevInfo: undefined,
         ansvarligInfo: undefined,
         fakturaInfo: {
