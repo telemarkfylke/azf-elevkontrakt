@@ -104,6 +104,8 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
     if(elevData?.status !== 404) {
         document.elevInfo = {
             navn: elevData?.navn || 'Ukjent',
+            fornavn: elevData?.fornavn || 'Ukjent',
+            etternavn: elevData?.etternavn || 'Ukjent',
             upn: elevData?.upn || 'Ukjent',
             fnr: formInfo?.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
             elevnr: elevData?.elevnummer || 'Ukjent',
@@ -200,6 +202,8 @@ const fillManualDocument = (documentData, archiveData, elevData, ansvarligData) 
     if(elevData?.status !== 404) {
         document.elevInfo = {
             navn: elevData?.navn || 'Ukjent',
+            fornavn: elevData?.fornavn || 'Ukjent',
+            etternavn: elevData?.etternavn || 'Ukjent',
             upn: elevData?.upn || 'Ukjent',
             fnr: documentData?.fnr || 'Ukjent',
             elevnr: elevData?.elevnummer || 'Ukjent',

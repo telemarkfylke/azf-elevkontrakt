@@ -90,6 +90,8 @@ const generateFormInfoSigned = (unSignedForm) => {
 
 /*
         elevData.navn || 'Ukjent',
+        elevData.fornavn || 'Ukjent',
+        elevData.etternavn || 'Ukjent',
         elevData.upn || 'Ukjent',
         formInfo.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
         elevData.elevnummer || 'Ukjent',
@@ -101,6 +103,8 @@ const generateFormInfoSigned = (unSignedForm) => {
 const generateElevData = (randomIndex, studentNumber, classNumber) => {
     const elevData = {
         navn: `Test Elev${studentNumber}`,
+        fornavn: `Test`,
+        etternavn: `Elev${studentNumber}`,
         upn: `elev${studentNumber}@testfylke.no`,
         elevnummer: Math.floor(10000000 + Math.random() * 90000000).toString(), // Random 8-digit number, to simulate elevnummer
         elevforhold: [
