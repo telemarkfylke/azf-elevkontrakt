@@ -33,22 +33,23 @@ const getBillingYear = (rate) => {
  */
 const fillDocument = (formInfo, elevData, ansvarligData, error) => {
     const document = {
-        uuid: formInfo.parseXml.result.ArchiveData.uuid || 'Ukjent',
+        uuid: formInfo?.parseXml.result.ArchiveData.uuid || 'Ukjent',
         generatedTimeStamp: new Date().toISOString(),
         isSigned: "false",
+        isManualContract: "false",
         isFakturaSent: "false",
         isImportedToXledger: "false",
-        isError: formInfo.parseXml.result.ArchiveData?.isError || 'Ukjent',
-        isUnder18: formInfo.parseXml.result.ArchiveData?.isUnder18 || 'Ukjent',
-        gotAnsvarlig: formInfo.parseXml.result.ArchiveData.FnrForesatt?.length > 0 ? "true" : "false" || 'Ukjent',
-        isStudent: formInfo.parseXml.result.ArchiveData.SkoleOrgNr?.length > 0 ? "true" : "false" || 'Ukjent', 
-        skoleOrgNr: formInfo.parseXml.result.ArchiveData?.SkoleOrgNr || 'Ukjent',
+        isError: formInfo?.parseXml.result.ArchiveData?.isError || 'Ukjent',
+        isUnder18: formInfo?.parseXml.result.ArchiveData?.isUnder18 || 'Ukjent',
+        gotAnsvarlig: formInfo?.parseXml.result.ArchiveData.FnrForesatt?.length > 0 ? "true" : "false" || 'Ukjent',
+        isStudent: formInfo?.parseXml.result.ArchiveData.SkoleOrgNr?.length > 0 ? "true" : "false" || 'Ukjent', 
+        skoleOrgNr: formInfo?.parseXml.result.ArchiveData?.SkoleOrgNr || 'Ukjent',
         unSignedskjemaInfo: {
-            refId: formInfo.refId || 'Ukjent',
-            acosName: formInfo.acosName || 'Ukjent',
-            kontraktType: formInfo.parseXml.result.ArchiveData.typeKontrakt || 'Ukjent',
-            archiveDocumentNumber: formInfo.archive?.result.DocumentNumber || 'Ukjent',
-            createdTimeStamp: formInfo.createdTimeStamp || 'Ukjent',
+            refId: formInfo?.refId || 'Ukjent',
+            acosName: formInfo?.acosName || 'Ukjent',
+            kontraktType: formInfo?.parseXml.result.ArchiveData.typeKontrakt || 'Ukjent',
+            archiveDocumentNumber: formInfo?.archive?.result.DocumentNumber || 'Ukjent',
+            createdTimeStamp: formInfo?.createdTimeStamp || 'Ukjent',
         },
         signedSkjemaInfo: {
             refId: 'Ukjent',
@@ -70,21 +71,21 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
         fakturaInfo: {
             rate1: {
                 // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate. 
-                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
+                faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
                 faktureringsDato: undefined,
                 status: 'Ikke Fakturert',
                 løpenummer: undefined
             },
             rate2: {
                 // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke', 
+                faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke', 
                 faktureringsDato: undefined,
                 status: 'Ikke Fakturert',
                 løpenummer: undefined
             },
             rate3: {
                 // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: formInfo.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
+                faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
                 faktureringsDato: undefined,
                 status: 'Ikke Fakturert',
                 løpenummer: undefined
@@ -102,9 +103,9 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
     }
     if(elevData?.status !== 404) {
         document.elevInfo = {
-            navn: elevData.navn || 'Ukjent',
-            upn: elevData.upn || 'Ukjent',
-            fnr: formInfo.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
+            navn: elevData?.navn || 'Ukjent',
+            upn: elevData?.upn || 'Ukjent',
+            fnr: formInfo?.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
             elevnr: elevData?.elevnummer || 'Ukjent',
         }
         if(elevData?.elevforhold === undefined) {
@@ -126,6 +127,102 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
     return document
 }
 
+const fillManualDocument = (documentData, archiveData, elevData, ansvarligData) => {
+    const document = {
+        uuid: 'Ukjent',
+        generatedTimeStamp: new Date().toISOString(),
+        isSigned: "true",
+        isManualContract: "true",
+        isFakturaSent: "false",
+        isImportedToXledger: "false",
+        isError: 'Ukjent',
+        isUnder18: 'Ukjent',
+        gotAnsvarlig: documentData.foresatt === '' ? "false" : "true" || 'Ukjent',
+        isStudent: documentData?.schoolOrgNumber !== '' ? "true" : "false" || 'Ukjent', 
+        skoleOrgNr: documentData?.schoolOrgNumber || 'Ukjent',
+        unSignedskjemaInfo: {
+            refId: 'Ukjent',
+            acosName: 'Manuelt kontraktsdokument',
+            kontraktType: documentData?.type || 'Ukjent',
+            archiveDocumentNumber: 'Ukjent',
+            createdTimeStamp: 'Ukjent',
+        },
+        signedSkjemaInfo: {
+            refId: 'Ukjent',
+            acosName: 'Manuelt kontraktsdokument',
+            kontraktType: documentData?.type || 'Ukjent',
+            archiveDocumentNumber: archiveData?.DocumentNumber || 'Ukjent',
+            createdTimeStamp: new Date().toISOString(),
+        },
+        signedBy: {
+            navn: ansvarligData?.fulltnavn || 'Ukjent',
+            fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent',
+        },
+        xLedgerImportInfo: {
+            importStatus: 'false',
+            importDate: 'Ukjent',
+        },
+        elevInfo: undefined,
+        ansvarligInfo: undefined,
+        fakturaInfo: {
+            rate1: {
+                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate. 
+                faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
+                faktureringsDato: undefined,
+                status: 'Ikke Fakturert',
+                løpenummer: undefined
+            },
+            rate2: {
+                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+                faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke', 
+                faktureringsDato: undefined,
+                status: 'Ikke Fakturert',
+                løpenummer: undefined
+            },
+            rate3: {
+                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+                faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
+                faktureringsDato: undefined,
+                status: 'Ikke Fakturert',
+                løpenummer: undefined
+            },
+        },
+        pcInfo: {
+            released: "false",
+            releaseBy: "Ukjent",
+            releasedDate: "Ukjent",
+            returned: "false",
+            returnedRegisteredBy: "Ukjent",
+            returnedDate: "Ukjent",
+        },
+        error: [],
+    }
+    if(elevData?.status !== 404) {
+        document.elevInfo = {
+            navn: elevData?.navn || 'Ukjent',
+            upn: elevData?.upn || 'Ukjent',
+            fnr: documentData?.fnr || 'Ukjent',
+            elevnr: elevData?.elevnummer || 'Ukjent',
+        }
+        if(elevData?.elevforhold === undefined) {
+            document.elevInfo.skole = 'Ukjent';
+            document.elevInfo.klasse = 'Ukjent';
+            document.elevInfo.trinn = 'Ukjent';
+        } else {
+            document.elevInfo.skole = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.skole?.navn || 'Ukjent'
+            document.elevInfo.klasse = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.navn || 'Ukjent'
+            document.elevInfo.trinn = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.trinn || 'Ukjent'
+        }
+    }
+    if(ansvarligData !== undefined) {
+        document.ansvarligInfo = {
+            navn: ansvarligData?.fulltnavn || 'Ukjent',
+            fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent',
+        }
+    }
+    return document
+}
 module.exports = {
-    fillDocument
+    fillDocument,
+    fillManualDocument
 }

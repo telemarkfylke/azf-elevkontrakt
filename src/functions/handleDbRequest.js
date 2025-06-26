@@ -1,7 +1,7 @@
 const { app } = require('@azure/functions');
-const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus } = require('../lib/jobs/queryMongoDB');
-const config = require('../../config');
+const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract } = require('../lib/jobs/queryMongoDB');
 const { validateRoles } = require('../lib/auth/validateRoles');
+const { archiveDocument } = require('../lib/jobs/queryArchive');
 const { logger } = require('@vtfk/logger');
 
 app.http('handleDbRequest', {
@@ -45,18 +45,53 @@ app.http('handleDbRequest', {
             } else {
                 const jsonBody = await request.json()
                 if(request.method === 'POST') {
-                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite'])) {
+                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.itservicedesk-readwrite'])) {
                         logger('warn', [`${logPrefix} - POST`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
+                        // Check if the posted document is a manual contract. 
+                        if(jsonBody.isManual) {
+                            logger('info', [logPrefix, `Mottok et manuelt kontraktsdokument`])
+                            // Archive the manual contract
+                            logger('info', [logPrefix, `Arkiverer manuelt kontraktsdokument`])
+                            let archive 
+                            try {
+                                archive = await archiveDocument(jsonBody)
+                                /**
+                                 * Example of the archive object that should be returned from the archiveDocument function
+                                 * archive = {
+                                 *     Recno: 201202,
+                                 *     DocumentNumber: '23/00077-60',
+                                 *     ImportedDocumentNumber: null,
+                                 *     UID: '38cffcb5-77b7-4d9a-adf2-c669f57bb33e',
+                                 *     UIDOrigin: '360'
+                                 * }
+                                 */
+                            } catch (error) {
+                                logger('error', [logPrefix, `Error ved arkivering av manuelt kontraktsdokument`, error])
+                                throw new Error('Internal server error', error)
+                            }
+                            // Create a new document with the provided data that can be used to update the database
+                            logger('info', [logPrefix, `Oppretter et manuelt kontraktsdokument som kan postes til databasen`])
+                            let manualContract
+                            try {
+                                manualContract = await postManualContract(jsonBody, archive)
+                            } catch (error) {
+                                logger('error', [logPrefix, `Error ved oppretting av manuelt kontraktsdokument`, error])
+                                throw new Error('Internal server error', error)
+                            }
+                            return {status: 200, jsonBody: manualContract}
                         // Update the database
-                        try {
-                            logger('info', [logPrefix, `Oppretter et dokument med UUID:${jsonBody.parseXml.result.ArchiveData.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`])
-                            const result = await postFormInfo(jsonBody);
-                            return { status: 200, jsonBody: result }
-                        } catch (error) {
-                            logger('error', [logPrefix, `Error ved oppretting av dokument med UUID:${jsonBody.parseXml?.result?.ArchiveData?.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`, error])
-                            return { status: 500, error }
+                        } else {
+                            // Handle non manual contracts posting to the database
+                             try {
+                                logger('info', [logPrefix, `Oppretter et dokument med UUID:${jsonBody.parseXml.result.ArchiveData.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`])
+                                const result = await postFormInfo(jsonBody);
+                                return { status: 200, jsonBody: result }
+                            } catch (error) {
+                                logger('error', [logPrefix, `Error ved oppretting av dokument med UUID:${jsonBody.parseXml?.result?.ArchiveData?.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`, error])
+                                throw new Error('Internal server error', error)
+                            }
                         }
                     }
                 } else if(request.method === 'PUT') {
@@ -73,7 +108,7 @@ app.http('handleDbRequest', {
                                 return { status: 200, jsonBody: result }
                             } catch (error) {
                                 logger('error', [logPrefix, `Error ved innlevering eller utlevering av PC, kontrakt _id: ${jsonBody.contractID}`, error])
-                                return { status: 500, error }   
+                                throw new Error('Internal server error', error)   
                             }
                         } else {
                             // Update the database
@@ -83,7 +118,7 @@ app.http('handleDbRequest', {
                                 return { status: 200, jsonBody: result }
                             } catch (error) {
                                 logger('error', [logPrefix, `Error ved oppdatering av dokument med UUID: ${jsonBody.parseXml.result.ArchiveData.uuid}`, error])
-                                return { status: 500, error }
+                                throw new Error('Internal server error', error)
                             }
                         }
                     }

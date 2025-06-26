@@ -3,8 +3,8 @@ const { student } = require("./queryFINT")
 const { person } = require("./queryFREG")
 const { getMongoClient } = require('../auth/mongoClient.js')
 const { mongoDB } = require("../../../config")
-const { getSchoolyear } = require("../helpers/getSchoolyear")
-const { fillDocument } = require("../documentSchema.js")
+// const { getSchoolyear } = require("../helpers/getSchoolyear")
+const { fillDocument, fillManualDocument } = require("../documentSchema.js")
 const { ObjectId } = require("mongodb")
 
 const updateFormInfo = async (formInfo) => {
@@ -259,9 +259,83 @@ const updateContractPCStatus = async (contract, isMock) => {
     return result
 }
 
+const postManualContract = async (contract, archiveData, isMock) => {
+    const logPrefix = 'postManualContract'
+    const mongoClient = await getMongoClient()
+
+    // Valider contract
+    if(!contract) {
+        logger('error', [logPrefix, 'Mangler contract'])
+        return {status: 400, error: 'Mangler contract'}
+    }
+    if(!archiveData || !archiveData.DocumentNumber) {
+        logger('error', [logPrefix, 'Mangler archiveData eller DocumentNumber'])
+        return {status: 400, error: 'Mangler archiveData eller DocumentNumber'}
+    }
+    let elevData
+    let ansvarligData
+
+    if(isMock !== true) {
+        if(contract.fnr) {
+            // Hent mer info om eleven
+            elevData = await student(contract.fnr)
+            logger('info', [logPrefix, 'Henter data om elev, manuell kontrakt'])
+            if(elevData.status === 404) {
+                logger('info', [logPrefix, 'Elev ikke funnet i FINT, sjekker FREG'])
+                elevData = await person(contract.fnr)
+                // Eleven er ikke funnet
+                if(elevData === undefined) {
+                    logger('error', [logPrefix, 'Elev ikke funnet i FREG'])
+                    throw new Error('Elev ikke funnet')
+                } else {
+                    logger('error', [logPrefix, 'Elev ikke funnet i FINT'])
+                    throw new Error('Elev ikke funnet i FINT')
+                }
+            }
+        }
+
+        if(contract.foresattFnr !== '') {
+            // Hent mer info om ansvarlig
+            logger('info', [logPrefix, 'Henter data om ansvarlig'])
+            ansvarligData = await person(contract.foresattFnr)
+        } else {
+            logger('info', [logPrefix, 'Ingen foresatt oppgitt for manuell kontrakt, ansvarlig er da eleven selv'])
+            ansvarligData = await person(contract.fnr)
+        }
+        if(ansvarligData === undefined) {
+            // Ansvarlig er ikke funnet
+            logger('info', [logPrefix, 'Ansvarlig ikke funnet'])
+            throw new Error('Ansvarlig ikke funnet')
+        }
+    }
+    // Fyll ut dokumentet med data
+    const document = fillManualDocument(contract, archiveData, elevData, ansvarligData)
+
+    let result
+    try {
+        if(isMock === true) {
+            result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).insertOne(document)
+        } else {
+            result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).insertOne(document)
+        }
+        if(result.acknowledged !== true) {
+            logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument'])
+            throw new Error('Error ved oppretting av manuelt kontraktsdokument')
+        } else {
+            logger('info', [logPrefix, 'Manuelt kontraktsdokument opprettet'])
+            return {result: result, document: document}
+        }
+    } catch (error) {
+        logger('error', [logPrefix, 'Error poster til db', error])
+        throw new Error('Error poster til db', error)
+    }
+
+}
+
 module.exports = {
     postFormInfo,
     updateFormInfo,
     getDocuments,
-    updateContractPCStatus
+    updateContractPCStatus,
+    postManualContract
 }

@@ -202,6 +202,13 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                     dataToReturn.error = 'Error fetching KRR data for foreldre/ansvarlig'
                 }
             }
+            /**
+             * For testing purposes, we can simulate that some parents/guardians cannot be contacted digitally.
+             * dataToReturn.ansvarligSomIkkeKanVarsles.push(...dataToReturn.ansvarlig)
+             * dataToReturn.ansvarlig = []
+             */
+            // dataToReturn.ansvarligSomIkkeKanVarsles.push(...dataToReturn.ansvarlig)
+            // dataToReturn.ansvarlig = []
             if(dataToReturn.ansvarlig.length === 0) {
                 logger('info', [logPrefix, 'Fant ingen foreldre/ansvarlig som kan varsles digitalt'])
                 dataToReturn.isNonFixAbleError = true
@@ -212,6 +219,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                 logger('info', [logPrefix, `Fant: ${dataToReturn.ansvarligSomIkkeKanVarsles.length} foreldre/ansvarlig som ikke kan varsles digitalt`])
                 dataToReturn.gotAnsvarlig = true
                 dataToReturn.isNonFixAbleError = true
+                dataToReturn.error = 'No foreldre/ansvarlig that can be contacted digitally'
             }
         } else {
             dataToReturn.ansvarlig = subjectData.person.foreldreansvar
