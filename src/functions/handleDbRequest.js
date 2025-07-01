@@ -1,11 +1,11 @@
 const { app } = require('@azure/functions');
-const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract } = require('../lib/jobs/queryMongoDB');
+const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, deleteDocument } = require('../lib/jobs/queryMongoDB');
 const { validateRoles } = require('../lib/auth/validateRoles');
 const { archiveDocument } = require('../lib/jobs/queryArchive');
 const { logger } = require('@vtfk/logger');
 
 app.http('handleDbRequest', {
-    methods: ['GET', 'POST', 'PUT'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     authLevel: 'anonymous',
     route: 'handleDbRequest',
     handler: async (request, context) => {
@@ -122,6 +122,34 @@ app.http('handleDbRequest', {
                             }
                         }
                     }
+                }
+            }
+        } else if (request.method === 'DELETE') {
+             // Check roles/school provided in the query string
+            if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+                if(!request.query.get('school')) {
+                    logger('warn', [`${logPrefix} - DELETE`, 'Unauthorized access attempt'])
+                    return { status: 403, body: 'Forbidden' }
+                } 
+            }
+            
+            if (request.body === null) {
+                return { status: 400, body: 'Bad Request, no body provided' }
+            } else {
+                const jsonBody = await request.json()
+                let isMock = request.query.get('isMock')
+                isMock === 'true' ? isMock = true : isMock = false
+                console.log(jsonBody)
+                const result = await deleteDocument(jsonBody.contractID, isMock)
+                if (result.status === 200) {
+                    logger('info', [`${logPrefix} - DELETE`, `Document with ID ${jsonBody.contractID} deleted successfully`])
+                    return { status: 200, body: `Document with ID ${jsonBody.contractID} deleted successfully` }
+                } else if (result.status === 404) {
+                    logger('info', [`${logPrefix} - DELETE`, `Document with ID ${jsonBody.contractID} not found`])
+                    return { status: 404, body: `Document with ID ${jsonBody.contractID} not found` }
+                } else {
+                    logger('error', [`${logPrefix} - DELETE`, `Failed to delete document with ID ${jsonBody.contractID}: ${result.body}`])
+                    return { status: 500, body: `Failed to delete document with ID ${jsonBody.contractID}: ${result.body}` }
                 }
             }
         }

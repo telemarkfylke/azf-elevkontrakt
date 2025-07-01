@@ -35,6 +35,9 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
     const document = {
         uuid: formInfo?.parseXml.result.ArchiveData.uuid || 'Ukjent',
         generatedTimeStamp: new Date().toISOString(),
+        lastFINTSyncTimeStamp: new Date().toISOString(), // Timestamp for when the FINT person information was last synced.
+        lastXledgerSyncTimeStamp: 'Ukjent', // Timestamp for when the Xledger person information was updated/created.
+        lastPcInfoSyncTimeStamp: 'Ukjent', // Timestamp for when the PC information from cherwell was last synced.
         isSigned: "false",
         isManualContract: "false",
         isFakturaSent: "false",

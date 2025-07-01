@@ -332,10 +332,81 @@ const postManualContract = async (contract, archiveData, isMock) => {
 
 }
 
+const deleteDocument = async (documentId, isMock) => {
+    const logPrefix = 'deleteDocument'
+    const mongoClient = await getMongoClient()
+
+    // Valider documentId
+    if(!documentId) {
+        logger('error', [logPrefix, 'Mangler documentId'])
+        return {status: 400, error: 'Mangler documentId'}
+    }
+    
+    const moveDocumentToDeletedCollection = async (documentId, isMock) => {
+        // Flytt dokumentet fra mock collection til deleted collection
+        const docToMove = await mongoClient.db(mongoDB.dbName).collection(`${isMock ? mongoDB.contractsMockCollection : mongoDB.contractsCollection}`).findOne({ '_id': new ObjectId(documentId) })
+        if(!docToMove) {
+            logger('error', [logPrefix, 'Dokument ikke funnet for flytting'])
+            return {status: 404, error: 'Dokument ikke funnet for flytting'}
+        }
+        // Sjekk om deleted collection finnes, hvis ikke, opprett den
+        const deletedCollection = isMock ? mongoDB.deletedMockCollection : mongoDB.deletedCollection
+        const collectionExists = await mongoClient.db(mongoDB.dbName).listCollections({ name: deletedCollection }).hasNext()
+        if(!collectionExists) {
+            logger('info', [logPrefix, `Oppretter deleted collection: ${deletedCollection}`])
+            await mongoClient.db(mongoDB.dbName).createCollection(deletedCollection)
+        }
+        // Flytt dokumentet til deleted collection
+        logger('info', [logPrefix, `Flytter dokument med _id: ${documentId} til deleted collection`])
+        const result = await mongoClient.db(mongoDB.dbName).collection(deletedCollection).insertOne(docToMove)
+        if(result.acknowledged !== true) {
+            logger('error', [logPrefix, 'Error ved flytting av dokument til deleted collection'])
+            return {status: 500, error: 'Error ved flytting av dokument til deleted collection'}
+        } else {
+            logger('info', [logPrefix, 'Dokument flyttet til deleted collection'])
+            return {status: 200, message: 'Dokument flyttet til deleted collection'}
+        }
+    }
+
+    let result
+    if(isMock === true) {
+        // Flytt dokumentet til deleted collection
+        const moveResult = await moveDocumentToDeletedCollection(documentId, isMock)
+        if(moveResult.status !== 200) {
+            return moveResult
+        } else {
+            logger('info', [logPrefix, 'Dokument flyttet til deleted collection, fortsetter med sletting fra mock collection'])
+             // Slett dokumentet i mock collection
+            logger('info', [logPrefix, `Sletter dokument med _id: ${documentId} fra mock collection`])
+            result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).deleteOne({ '_id': new ObjectId(documentId) })
+        }
+    } else {
+        // Flytt dokumentet til deleted collection
+        const moveResult = await moveDocumentToDeletedCollection(documentId, isMock)
+        if(moveResult.status !== 200) {
+            return moveResult
+        } else {
+            logger('info', [logPrefix, 'Dokument flyttet til deleted collection, fortsetter med sletting fra collection'])
+            // Slett dokumentet i collection
+            logger('info', [logPrefix, `Sletter dokument med _id: ${documentId} fra collection`])
+            result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).deleteOne({ '_id': new ObjectId(documentId) })
+        }
+    }
+
+    if(result.deletedCount === 0) {
+        logger('error', [logPrefix, 'Dokument ikke funnet'])
+        return {status: 404, error: 'Dokument ikke funnet'}
+    }
+    logger('info', [logPrefix, 'Dokument slettet'])
+    return {status: 200, message: 'Dokument slettet'}
+
+}
+
 module.exports = {
     postFormInfo,
     updateFormInfo,
     getDocuments,
     updateContractPCStatus,
-    postManualContract
+    postManualContract, 
+    deleteDocument
 }

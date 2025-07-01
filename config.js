@@ -32,6 +32,8 @@ module.exports = {
         contractsCollection: process.env.MONGODB_CONTRACTS_COLLECTION,
         errorMockCollection: process.env.MONGODB_ERROR_MOCK_COLLECTION,
         contractsMockCollection: process.env.MONGODB_CONTRACTS_MOCK_COLLECTION,
+        deletedCollection: process.env.MONGODB_DELETED_COLLECTION,
+        deletedMockCollection: process.env.MONGODB_DELETED_MOCK_COLLECTION,
     },
     archive: {
         url: process.env.ARCHIVE_URL,
