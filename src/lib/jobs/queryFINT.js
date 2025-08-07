@@ -41,7 +41,7 @@ const employee = async (ssn) => {
 const student = async (ssn) => {
     const request = {
         method: 'get',
-        url: `${fint.url}/${fint.endPointStudent}/${fint.queryTypeSSN}/${ssn}`
+        url: `${fint.url}/${fint.endPointStudent}/${fint.queryTypeSSN}/${ssn}?useElevnummer=true`
     }
 
     const fintData = await queryFINT(request);
