@@ -39,9 +39,9 @@ const employee = async (ssn) => {
 }
 
 const student = async (ssn, useElevnummer) => {
-    // Check if useElevnummer is provided, if not default to false
+    // Check if useElevnummer is provided, if not default to true
     if (useElevnummer === undefined) {
-        useElevnummer = false;
+        useElevnummer = true;
     }
     const request = {
         method: 'get',
