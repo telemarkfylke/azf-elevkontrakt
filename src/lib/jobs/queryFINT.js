@@ -38,10 +38,14 @@ const employee = async (ssn) => {
     return fintData
 }
 
-const student = async (ssn) => {
+const student = async (ssn, useElevnummer) => {
+    // Check if useElevnummer is provided, if not default to false
+    if (useElevnummer === undefined) {
+        useElevnummer = false;
+    }
     const request = {
         method: 'get',
-        url: `${fint.url}/${fint.endPointStudent}/${fint.queryTypeSSN}/${ssn}?useElevnummer=true`
+        url: `${fint.url}/${fint.endPointStudent}/${fint.queryTypeSSN}/${ssn}?useElevnummer=${useElevnummer}`
     }
 
     const fintData = await queryFINT(request);
