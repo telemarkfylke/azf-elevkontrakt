@@ -182,26 +182,34 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
             for (const [i, ansvarlig] of subjectData.person.foreldreansvar.entries()) {
                 try {
                     const krrData = await lookupKRR([ansvarlig.ansvarlig])
-                    if(krrData.personer[0]?.varslingsstatus === 'KAN_IKKE_VARSLES') {
-                        dataToReturn.ansvarligSomIkkeKanVarsles.push(dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer === ansvarlig.ansvarlig))
-                        logger('info', [logPrefix, 'Foreldre/ansvarlig kan ikke varsles digitalt, ansvarlig er fjernet fra listen over ansvarlige'])
-                        // Remove the parent/guardian from the list of parents/guardians that can be contacted digitally
-                        dataToReturn.ansvarlig = dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer !== ansvarlig.ansvarlig)
-                    } else if(krrData.personer[0]?.varslingsstatus === 'KAN_VARSLES') {
-                        logger('info', [logPrefix, 'Foreldre/ansvarlig kan varsles digitalt'])
-                        dataToReturn.ansvarlig[i].krrData = krrData.personer[0]
-                    } else {
-                        logger('warn', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
-                        dataToReturn.isError = true
-                        dataToReturn.error = 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'
-                        dataToReturn.ansvarlig = []
-                    }
+                    dataToReturn.ansvarlig[i].krrData = krrData.personer[0]
                 } catch (error) {
                     logger('error', [logPrefix, 'Error fetching KRR data for foreldre/ansvarlig', error])
                     dataToReturn.isError = true
                     dataToReturn.error = 'Error fetching KRR data for foreldre/ansvarlig'
                 }
             }
+
+            // Check if we have the parent/guardian can be contacted digitally.
+            for (const ansvarlig of dataToReturn.ansvarlig) {
+                if(ansvarlig.krrData.varslingsstatus === 'KAN_VARSLES') {
+                    logger('info', [logPrefix, 'Foreldre/ansvarlig kan varsles digitalt'])
+                } else if(ansvarlig.krrData.varslingsstatus === 'KAN_IKKE_VARSLES') {
+                    // Add the parent/guardian to the list of parents/guardians that cannot be contacted digitally
+                    dataToReturn.ansvarligSomIkkeKanVarsles.push(ansvarlig)
+                    // dataToReturn.ansvarligSomIkkeKanVarsles.push(dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer === ansvarlig.ansvarlig))
+                    logger('info', [logPrefix, 'Foreldre/ansvarlig kan ikke varsles digitalt, ansvarlig er fjernet fra listen over ansvarlige'])
+                    // Remove the parent/guardian from the list of parents/guardians that can be contacted digitally
+                    dataToReturn.ansvarlig = dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer !== ansvarlig.foedselsEllerDNummer)
+                } else {
+                    logger('warn', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
+                    dataToReturn.isError = true
+                    dataToReturn.error = 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'
+                    dataToReturn.ansvarlig = []
+                }
+            }
+            
+
             /**
              * For testing purposes, we can simulate that some parents/guardians cannot be contacted digitally.
              * dataToReturn.ansvarligSomIkkeKanVarsles.push(...dataToReturn.ansvarlig)
@@ -215,7 +223,9 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                 dataToReturn.gotAnsvarlig = false
                 dataToReturn.error = 'No foreldre/ansvarlig that can be contacted digitally'
             }
-            if(dataToReturn.ansvarligSomIkkeKanVarsles.length > 0) {
+            // If we have parents/guardians that cannot be contacted digitally, we should return an error
+            // This is to prevent the form from being submitted if there are no parents/guardians
+            if(dataToReturn.ansvarligSomIkkeKanVarsles.length > 0 && dataToReturn.ansvarlig.length === 0) {
                 logger('info', [logPrefix, `Fant: ${dataToReturn.ansvarligSomIkkeKanVarsles.length} foreldre/ansvarlig som ikke kan varsles digitalt`])
                 dataToReturn.gotAnsvarlig = true
                 dataToReturn.isNonFixAbleError = true
