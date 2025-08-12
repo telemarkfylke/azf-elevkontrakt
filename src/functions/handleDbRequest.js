@@ -45,7 +45,7 @@ app.http('handleDbRequest', {
             } else {
                 const jsonBody = await request.json()
                 if(request.method === 'POST') {
-                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.itservicedesk-readwrite'])) {
+                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.skoleadministrator-write'])) {
                         logger('warn', [`${logPrefix} - POST`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
