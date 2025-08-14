@@ -402,11 +402,43 @@ const deleteDocument = async (documentId, isMock) => {
 
 }
 
+const updateDocument = async(documentId, updateData, isMock) => {
+    const logPrefix = 'updateDocument'
+    const mongoClient = await getMongoClient()
+
+    // Validate documentId
+    if(!documentId) {
+        logger('error', [logPrefix, 'Mangler documentId'])
+        return {status: 400, error: 'Mangler documentId'}
+    }
+    // validate updateData
+    if(!updateData || Object.keys(updateData).length === 0) {
+        logger('error', [logPrefix, 'Mangler updateData'])
+        return {status: 400, error: 'Mangler updateData'}
+    }
+    
+    // Check what keys are being updated
+    const updatedKeys = Object.keys(updateData)
+    logger('info', [logPrefix, `Oppdaterer dokument med _id: ${documentId}`, `Oppdaterer felter: ${updatedKeys.join(', ')}`])
+
+    let result 
+    if(isMock === true) {
+        // Update contract in mock collection
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
+    } else {
+        // Update contract in collection
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
+    }
+
+    return result
+}
+
 module.exports = {
     postFormInfo,
     updateFormInfo,
     getDocuments,
     updateContractPCStatus,
     postManualContract, 
-    deleteDocument
+    deleteDocument,
+    updateDocument
 }
