@@ -34,15 +34,20 @@ const archiveDocument = async (payload) => {
       title: payload.title,
       AccessCode: '13',
       AccessGroup: school.tilgangsgruppe,
-      Category: "Dokument ut",
+      Category: "Dokument inn",
        Contacts: [ // Her vil alltid avsender være eleven, men mottaker kan være enten eleven (over 18) eller en foresatt (for elev under 18)
         {
-          ReferenceNumber: elevmappe.privatePerson.ssn, // FNR til elev
+          ReferenceNumber: elevmappe.privatePerson.ssn, // FNR til elev (innlogget i skjema)
+          Role: 'Kopi til',
+          IsUnofficial: true
+        },
+        {
+          ReferenceNumber: school.orgNr, // Skolens organisasjonsnummer
           Role: 'Mottaker',
           IsUnofficial: true
         },
         {
-          ReferenceNumber: privatePerson.privatePerson.ssn, // FNR til elevens foresatt om eleven er under 18 år
+          ReferenceNumber: privatePerson.privatePerson.ssn, // FNR til den som signerer avtalen (foresatt eller elev)
           Role: 'Avsender',
           IsUnofficial: true
         }
