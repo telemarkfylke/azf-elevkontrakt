@@ -157,7 +157,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     }
 
     // Check if student is under 18
-    if(subjectData.person.alder < 18) {
+    if(subjectData.person.alder < 18 || subjectData?.student?.alder < 18) {
         logger('info', [logPrefix, 'Student er under 18'])
         dataToReturn.isUnder18 = true
         // If student is under 18 we also need to check if the student has foreldreansvar

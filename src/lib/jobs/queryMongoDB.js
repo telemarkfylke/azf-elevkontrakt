@@ -27,7 +27,7 @@ const updateFormInfo = async (formInfo) => {
         logger('error', [logPrefix, 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
         return {status: 400, error: 'Mangler acosName', refId: formInfo.refId}
     }
-    if(!formInfo.parseXml.result.ArchiveData.uuid) {
+    if(!formInfo.parseXml.result.ArchiveData.uuid || formInfo.parseXml.result.ArchiveData.uuid === '' || formInfo.parseXml.result.ArchiveData.uuid === undefined || formInfo.parseXml.result.ArchiveData.uuid === null || formInfo.parseXml.result.ArchiveData.uuid === 'null') {
         logger('error', [logPrefix, 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
         return {status: 400, error: 'Mangler UUID', refId: formInfo.refId, acosName: formInfo.acosName}
     }
@@ -95,7 +95,7 @@ const postFormInfo = async (formInfo, isMock) => {
             logger('error', [logPrefix, 'Mangler acosName', `SkjemaID: ${formInfo.refId}`])
             return {status: 400, error: 'Mangler acosName', refId: formInfo.refId}
         }
-        if(!formInfo.parseXml.result.ArchiveData.uuid && (!formInfo.parseXml.result.ArchiveData.isError === "true" || !formInfo.parseXml.result.ArchiveData.isNonFixAbleError === "true")) {
+        if(!formInfo.parseXml.result.ArchiveData.uuid || formInfo.parseXml.result.ArchiveData.uuid === '' || formInfo.parseXml.result.ArchiveData.uuid === undefined || formInfo.parseXml.result.ArchiveData.uuid === null || formInfo.parseXml.result.ArchiveData.uuid === 'null' && (!formInfo.parseXml.result.ArchiveData.isError === "true" || !formInfo.parseXml.result.ArchiveData.isNonFixAbleError === "true")) {
             logger('error', [logPrefix, 'Mangler UUID', `SkjemaID: ${formInfo.refId}`, `acosName: ${formInfo.acosName}`])
             return {status: 400, error: 'Mangler UUID', refId: formInfo.refId, acosName: formInfo.acosName}
         }
