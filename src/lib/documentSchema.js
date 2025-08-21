@@ -134,7 +134,7 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
 
 const fillManualDocument = (documentData, archiveData, elevData, ansvarligData) => {
     const document = {
-        uuid: 'Ukjent',
+        uuid: crypto.randomUUID(),
         generatedTimeStamp: new Date().toISOString(),
         isSigned: "true",
         isManualContract: "true",
