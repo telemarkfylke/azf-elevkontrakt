@@ -173,9 +173,18 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                 }
             } else {
                 // If student has only one foreldre/ansvarlig we need to get additional data.
-                const foreldreansvarlig = subjectData.person.foreldreansvar[0]
-                const foreldreansvarligData = await person(foreldreansvarlig.ansvarlig)
-                dataToReturn.ansvarlig.push(foreldreansvarligData)
+                // If foreldreansvar is empty, we should not try to access it
+                if(subjectData.person.foreldreansvar.length > 0) {
+                    const foreldreansvarlig = subjectData.person.foreldreansvar[0]
+                    const foreldreansvarligData = await person(foreldreansvarlig.ansvarlig)
+                    dataToReturn.ansvarlig.push(foreldreansvarligData)
+                } else {
+                    logger('info', [logPrefix, 'Fant ikke foreldreansvarlig, kan ikke prosessere'])
+                    dataToReturn.gotAnsvarlig = false
+                    dataToReturn.isNonFixAbleError = true
+                    dataToReturn.error = 'No foreldreansvarlig found'
+                    dataToReturn.ansvarlig = []
+                }
             }
             // Check if parent/guardian can be contacted digitally
             logger('info', [logPrefix, 'Sjekker om foreldre/ansvarlig kan varsles digitalt'])
