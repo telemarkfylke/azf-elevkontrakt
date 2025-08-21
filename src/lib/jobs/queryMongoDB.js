@@ -201,7 +201,7 @@ const getDocuments = async (query, isMock) => {
 
 const updateContractPCStatus = async (contract, isMock) => {
     // Fields to update:
-    // pcInfo.releasedBy: "innlogget bruker"
+    // pcInfo.releasedBy: "innlogget bruker - redigert av administrator"
     // pcInfo.releasedDate: "timestamp"
     // pceInfo.released: "true" 
 
@@ -229,7 +229,7 @@ const updateContractPCStatus = async (contract, isMock) => {
     if(contract.releasePC === true) {
         logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, releasePC: ${contract.releasePC}`])
         const releasePCInfo = {
-            'pcInfo.releasedBy': "innlogget bruker",
+            'pcInfo.releaseBy': "innlogget bruker - redigert av administrator",
             'pcInfo.releasedDate': new Date(),
             'pcInfo.released': "true"
         }
@@ -237,7 +237,7 @@ const updateContractPCStatus = async (contract, isMock) => {
     } else if (contract.returnPC === true) {
         logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, returnPC: ${contract.returnPC}`])
         const returnPCInfo = {
-            'pcInfo.returnedBy': "innlogget bruker",
+            'pcInfo.returnedBy': "innlogget bruker - redigert av administrator",
             'pcInfo.returnedDate': new Date(),
             'pcInfo.returned': "true"
         }
