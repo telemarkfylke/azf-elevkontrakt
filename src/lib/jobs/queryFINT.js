@@ -38,14 +38,18 @@ const employee = async (ssn) => {
     return fintData
 }
 
-const student = async (ssn, useElevnummer) => {
+const student = async (ssn, useElevnummer, skipCache) => {
     // Check if useElevnummer is provided, if not default to true
     if (useElevnummer === undefined) {
         useElevnummer = true;
     }
+    // Check if skipCache is provided, if not default to false
+    if (skipCache === undefined) {
+        skipCache = false;
+    }
     const request = {
         method: 'get',
-        url: `${fint.url}/${fint.endPointStudent}/${fint.queryTypeSSN}/${ssn}?useElevnummer=${useElevnummer}`
+        url: `${fint.url}/${fint.endPointStudent}/${fint.queryTypeSSN}/${ssn}?useElevnummer=${useElevnummer}&skipCache=${skipCache}`
     }
 
     const fintData = await queryFINT(request);
