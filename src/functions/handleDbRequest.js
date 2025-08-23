@@ -1,5 +1,5 @@
 const { app } = require('@azure/functions');
-const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, deleteDocument } = require('../lib/jobs/queryMongoDB');
+const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument } = require('../lib/jobs/queryMongoDB');
 const { validateRoles } = require('../lib/auth/validateRoles');
 const { archiveDocument } = require('../lib/jobs/queryArchive');
 const { logger } = require('@vtfk/logger');
@@ -140,7 +140,7 @@ app.http('handleDbRequest', {
                 let isMock = request.query.get('isMock')
                 isMock === 'true' ? isMock = true : isMock = false
                 console.log(jsonBody)
-                const result = await deleteDocument(jsonBody.contractID, isMock)
+                const result = await moveAndDeleteDocument(jsonBody.contractID, 'deleted', isMock)
                 if (result.status === 200) {
                     logger('info', [`${logPrefix} - DELETE`, `Document with ID ${jsonBody.contractID} deleted successfully`])
                     return { status: 200, body: `Document with ID ${jsonBody.contractID} deleted successfully` }

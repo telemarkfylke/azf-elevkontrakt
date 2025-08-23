@@ -25,7 +25,7 @@
  *  
  */
 
-const { getDocuments, updateDocument } = require('./queryMongoDB')
+const { getDocuments, updateDocument, moveAndDeleteDocument } = require('./queryMongoDB')
 const { teams } = require('../../../config.js')
 const { logger } = require('@vtfk/logger')
 const { student } = require('./queryFINT')
@@ -44,7 +44,7 @@ const updateStudentInfo = async () => {
     }
 
     logger('info', [loggerPrefix, 'Starting to update student information'])
-    const documents = await getDocuments({"elevInfo.skole": "Notodden videregående skole"}, false)
+    const documents = await getDocuments({}, false)
     if(documents.result.length === 0) { return report } // If no documents are found, we can return the report
     for (const doc of documents.result) {
         const updateData = {}
@@ -72,7 +72,12 @@ const updateStudentInfo = async () => {
                     movedDocuments.push(doc._id)
                     report.historyCount += 1
                     // Move the document to the history database
-                    // TODO: Implement the logic to move the document to the history database
+                    try {
+                        await moveAndDeleteDocument(doc._id, 'historic', false)
+                    } catch (error) {
+                        logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+                        continue // Skip to the next document 
+                    }
                 }
             }
         } else if (fintData.status === 500 || fintData.status === 400) {
