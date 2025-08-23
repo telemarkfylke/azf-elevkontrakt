@@ -25,7 +25,7 @@ app.http('handleDbRequest', {
             // Check roles/school provided in the query string
             if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.read', 'elevkontrakt.readwrite'])) {
                 if(!request.query.get('school')) {
-                    logger('warn', [`${logPrefix} - PUT`, 'Unauthorized access attempt'])
+                    logger('error', [`${logPrefix} - PUT`, 'Unauthorized access attempt'])
                     return { status: 403, body: 'Forbidden' }
                 } 
             } 
@@ -46,7 +46,7 @@ app.http('handleDbRequest', {
                 const jsonBody = await request.json()
                 if(request.method === 'POST') {
                     if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.skoleadministrator-write'])) {
-                        logger('warn', [`${logPrefix} - POST`, 'Unauthorized access attempt'])
+                        logger('error', [`${logPrefix} - POST`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
                         // Check if the posted document is a manual contract. 
@@ -96,7 +96,7 @@ app.http('handleDbRequest', {
                     }
                 } else if(request.method === 'PUT') {
                     if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.readwrite'])) {
-                        logger('warn', [`${logPrefix} - PUT`, 'Unauthorized access attempt'])
+                        logger('error', [`${logPrefix} - PUT`, 'Unauthorized access attempt'])
                         return { status: 403, body: 'Forbidden' }
                     } else {
                         if(jsonBody.contractID && (jsonBody.releasePC === true || jsonBody.returnPC === true)) {
@@ -128,7 +128,7 @@ app.http('handleDbRequest', {
              // Check roles/school provided in the query string
             if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
                 if(!request.query.get('school')) {
-                    logger('warn', [`${logPrefix} - DELETE`, 'Unauthorized access attempt'])
+                    logger('error', [`${logPrefix} - DELETE`, 'Unauthorized access attempt'])
                     return { status: 403, body: 'Forbidden' }
                 } 
             }

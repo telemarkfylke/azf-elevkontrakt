@@ -38,5 +38,8 @@ module.exports = {
     archive: {
         url: process.env.ARCHIVE_URL,
         scope: process.env.ARCHIVE_SCOPE,
+    },
+    teams: {
+        webhook: process.env.TEAMS_WEBHOOK_URL,
     }
 }

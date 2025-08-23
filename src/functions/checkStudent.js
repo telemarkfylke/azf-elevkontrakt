@@ -15,7 +15,7 @@ app.http('checkStudent', {
         const authorizationHeader = request.headers.get('authorization')
         // TODO Rydde litt i rollene :)
         if(!validateRoles(authorizationHeader, ['elevkontrakt.read', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.administrator-readwrite', 'elevkontrakt.skoleadministrator-write'])) {
-            logger('warn', ['checkStudent', 'Unauthorized access attempt'])
+            logger('error', ['checkStudent', 'Unauthorized access attempt'])
             return { status: 403, body: 'Forbidden' }
         } else {
             const data = await validateStudentInfo(ssn, onlyAnsvarlig)

@@ -11,7 +11,7 @@ app.http('generateMockData', {
     handler: async (request, context) => {
         const authorizationHeader = request.headers.get('authorization')
         if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.read'])) {
-            logger('warn', ['generateMockData', 'Unauthorized access attempt'])
+            logger('error', ['generateMockData', 'Unauthorized access attempt'])
             return { status: 403, body: 'Forbidden' }
         } else {
             let numberOfSignedForms = request.query.get('numberOfSignedForms');

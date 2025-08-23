@@ -211,7 +211,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                     // Remove the parent/guardian from the list of parents/guardians that can be contacted digitally
                     dataToReturn.ansvarlig = dataToReturn.ansvarlig.filter((item) => item.foedselsEllerDNummer !== ansvarlig.foedselsEllerDNummer)
                 } else {
-                    logger('warn', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
+                    logger('error', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
                     dataToReturn.isError = true
                     dataToReturn.error = 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'
                     dataToReturn.ansvarlig = []
@@ -260,7 +260,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
                 dataToReturn.error = 'Student kan ikke varsles digitalt'
                 dataToReturn.ansvarlig = []
             } else {
-                logger('warn', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
+                logger('error', [logPrefix, 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'])
                 dataToReturn.isError = true
                 dataToReturn.error = 'Ukjent feil, traff ikke på noen av de kjente varslingsstatusene'
                 dataToReturn.ansvarlig = []
