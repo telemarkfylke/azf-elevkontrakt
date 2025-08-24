@@ -50,7 +50,7 @@ const updateStudentInfo = async () => {
 
     const moveToHistoryDatabase = async (doc) => {
         // Check if the field "notFoundInFINT" object exists in the document
-        if (!doc.notFoundInFINT.date) {
+        if (!doc.notFoundInFINT?.date) {
             // If it does not exist, create it
             updateData["notFoundInFINT.date"] = new Date() // Set the date to the current date
             updateData["notFoundInFINT.message"] = 'Student not found in FINT'
@@ -90,7 +90,7 @@ const updateStudentInfo = async () => {
                 await moveToHistoryDatabase(doc)
                 report.newStudentsNotFoundInFINTCount += 1
             } catch (error) {
-                logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+                logger('error', [loggerPrefix, `Error handling document with _id ${doc._id}`, error])
                 continue
             }
         } else if (fintData.status === 500 || fintData.status === 400) {
@@ -159,7 +159,7 @@ const updateStudentInfo = async () => {
                     report.studentsWithoutActiveElevforholdCount += 1
                     studentsWithoutActiveElevforhold.push(doc._id)
                 } catch (error) {
-                    logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+                    logger('error', [loggerPrefix, `Error handling document with _id ${doc._id}`, error])
                     continue
                 }
             }
