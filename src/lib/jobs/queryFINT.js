@@ -19,7 +19,7 @@ const queryFINT = async (request) => {
         return fintData.data
     } catch (error) {
         if(error.status === 404) {
-            logger('warn', ['queryFINT', 'Fant ikke data i FINT', error])
+            logger('info', ['queryFINT', 'Fant ikke data i FINT', error])
             return { status: 404, message: 'Personen er ikke en student' }
         }
         logger('error', ['queryFINT', 'Klarte ikke å hente data fra FINT', error])
