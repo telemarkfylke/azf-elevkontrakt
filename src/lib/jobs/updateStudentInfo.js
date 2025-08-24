@@ -35,12 +35,46 @@ const updateStudentInfo = async () => {
     const loggerPrefix = 'updateStudentInfo'
     const updatedDocuments = []
     const movedDocuments = []
+    const studentsWithoutActiveElevforhold = []
+    // Report object to be returned at the end of the function
+    // Also used in the teams message
     const report = {
         updateCount: 0,
         historyCount: 0,
-        newStudentsNotFoundInFINTCount: 0,
+        newStudentsNotFoundInFINTCount: 0, // Count of new students not found in FINT during this run "404 Not Found" - "No student with the provided identificator found in FINT"
+        studentsWithoutActiveElevforholdCount: 0, // Count of students found in FINT but without any active elevforhold
         updatedDocuments: updatedDocuments,
-        movedDocuments: movedDocuments
+        movedDocuments: movedDocuments,
+        studentsWithoutActiveElevforhold: studentsWithoutActiveElevforhold
+    }
+
+    const moveToHistoryDatabase = async (doc) => {
+        // Check if the field "notFoundInFINT" object exists in the document
+        if (!doc.notFoundInFINT.date) {
+            // If it does not exist, create it
+            updateData["notFoundInFINT.date"] = new Date() // Set the date to the current date
+            updateData["notFoundInFINT.message"] = 'Student not found in FINT'
+            // Update the document with the new field
+            logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT, updating document`])
+            updatedDocuments.push(doc._id)
+            await updateDocument(doc._id, updateData)
+        } else {
+            // Check if the date is more than 10 days old.
+            const tenDaysAgo = new Date();
+            tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+            if (doc.notFoundInFINT.date < tenDaysAgo) {
+                // If its more than 10 days old, move the document to the history database
+                logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 10 days, moving to history database`])
+                movedDocuments.push(doc._id)
+                report.historyCount += 1
+                // Move the document to the history database
+                try {
+                    await moveAndDeleteDocument(doc._id, 'historic', false)
+                } catch (error) {
+                    logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+                }
+            }
+        }
     }
 
     logger('info', [loggerPrefix, 'Starting to update student information'])
@@ -51,34 +85,13 @@ const updateStudentInfo = async () => {
         const fnr = doc.elevInfo.fnr
         const fintData = await student(fnr, false, true)
         if (fintData.status === 404 && fintData.message === 'Personen er ikke en student') {
-            // If the student is not found, we can handle it here
-            // Check if the field "notFoundInFINT" object exists in the document
-            if (!doc.notFoundInFINT.date) {
-                // If it does not exist, create it
-                updateData["notFoundInFINT.date"] = new Date() // Set the date to the current date
-                updateData["notFoundInFINT.message"] = 'Student not found in FINT'
-                // Update the document with the new field
-                logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT, updating document`])
+            // If the student is not found. Try to move the document to the history database. 
+            try {
+                await moveToHistoryDatabase(doc)
                 report.newStudentsNotFoundInFINTCount += 1
-                updatedDocuments.push(doc._id)
-                await updateDocument(doc._id, updateData)
-            } else {
-                // Check if the date is more than 10 days old.
-                const tenDaysAgo = new Date();
-                tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-                if (doc.notFoundInFINT.date < tenDaysAgo) {
-                    // If its more than 10 days old, move the document to the history database
-                    logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 10 days, moving to history database`])
-                    movedDocuments.push(doc._id)
-                    report.historyCount += 1
-                    // Move the document to the history database
-                    try {
-                        await moveAndDeleteDocument(doc._id, 'historic', false)
-                    } catch (error) {
-                        logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
-                        continue // Skip to the next document 
-                    }
-                }
+            } catch (error) {
+                logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+                continue
             }
         } else if (fintData.status === 500 || fintData.status === 400) {
             // If there is an error fetching the student data, we can log it
@@ -110,6 +123,7 @@ const updateStudentInfo = async () => {
             // Find the first active elevforhold and update elevInfo field if it is not a match with the fintData
             const fintElevForhold = fintData.elevforhold.find(ef => ef.aktiv === true) 
             // Replace skole, klasse, trinn if fintElevForhold is found and if it is not a match with the document.elevInfo.skole, document.skoleOrgNr, document.elevInfo.klasse, document.elevInfo.trinn
+            // If no active elevforhold is found, the student is no longer a student and we can move the document to the history database if the notFoundInFINT field is more than 10 days old.
             if(fintElevForhold !== undefined) {
                 // Check if values are not null or undefined before updating
                 if (fintElevForhold.skole.navn && fintElevForhold.skole.navn !== doc.elevInfo.skole) {
@@ -138,7 +152,16 @@ const updateStudentInfo = async () => {
                     logger('error', [loggerPrefix, `Basisgruppemedlemskap not found in fintElevForhold for document ${doc._id}`])
                 }
             } else {
-                logger('error', [loggerPrefix, `No active elevforhold found for document ${doc._id}, but elev was found in FINT`])
+                // If no active elevforhold is found, the student is no longer a student and we can move the document to the history database if the notFoundInFINT field is more than 10 days old.
+                logger('info', [loggerPrefix, `No active elevforhold found for document ${doc._id}, but elev was found in FINT`])
+                try {
+                    await moveToHistoryDatabase(doc)
+                    report.studentsWithoutActiveElevforholdCount += 1
+                    studentsWithoutActiveElevforhold.push(doc._id)
+                } catch (error) {
+                    logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+                    continue
+                }
             }
              // If there are any updates, we can update the document
             if (Object.keys(updateData).length > 0) {
