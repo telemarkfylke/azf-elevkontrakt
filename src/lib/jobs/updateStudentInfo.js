@@ -224,6 +224,17 @@ const updateStudentInfo = async () => {
                             },
                             {
                                 type: 'TextBlock',
+                                text: `**${report.studentsWithoutActiveElevforholdCount}** elever har ikke et aktivt elevforhold`,
+                                wrap: true,
+                                weight: 'Bolder',
+                                size: 'Medium'
+                            },
+                            {
+                                type: 'FactSet',
+                                facts: report.studentsWithoutActiveElevforhold.map(id => ({ title: 'Document ID', value: id }))
+                            },
+                            {
+                                type: 'TextBlock',
                                 text: `**${report.newStudentsNotFoundInFINTCount}** nye student(er) ble ikke funnet i FINT`,
                                 wrap: true,
                                 weight: 'Bolder',
