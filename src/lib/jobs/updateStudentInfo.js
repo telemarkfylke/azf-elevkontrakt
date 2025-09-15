@@ -39,6 +39,7 @@ const updateStudentInfo = async () => {
     // Report object to be returned at the end of the function
     // Also used in the teams message
     const report = {
+        totalNumberOfDocuments: 0,
         updateCount: 0,
         historyCount: 0,
         newStudentsNotFoundInFINTCount: 0, // Count of new students not found in FINT during this run "404 Not Found" - "No student with the provided identificator found in FINT"
@@ -59,12 +60,12 @@ const updateStudentInfo = async () => {
             updatedDocuments.push(doc._id)
             await updateDocument(doc._id, updateData)
         } else {
-            // Check if the date is more than 10 days old.
-            const tenDaysAgo = new Date();
-            tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-            if (doc.notFoundInFINT.date < tenDaysAgo) {
-                // If its more than 10 days old, move the document to the history database
-                logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 10 days, moving to history database`])
+            // Check if the date is more than 5 days old.
+            const date = new Date();
+            date.setDate(date.getDate() - 5);
+            if (doc.notFoundInFINT.date < date) {
+                // If its more than 3 days old, move the document to the history database
+                logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 3 days, moving to history database`])
                 movedDocuments.push(doc._id)
                 report.historyCount += 1
                 // Move the document to the history database
@@ -80,11 +81,12 @@ const updateStudentInfo = async () => {
     logger('info', [loggerPrefix, 'Starting to update student information'])
     const documents = await getDocuments({}, false)
     if(documents.result.length === 0) { return report } // If no documents are found, we can return the report
+    report.totalNumberOfDocuments = documents.result.length
     for (const doc of documents.result) {
         const updateData = {}
         const fnr = doc.elevInfo.fnr
         const fintData = await student(fnr, false, true)
-        if (fintData.status === 404 && fintData.message === 'Personen er ikke en student') {
+        if (fintData.status === 404 && fintData.message === 'Personen er ikke en student' && fintData.status !== 200) {
             // If the student is not found. Try to move the document to the history database. 
             try {
                 await moveToHistoryDatabase(doc, updateData)
@@ -164,7 +166,7 @@ const updateStudentInfo = async () => {
                 }
             }
              // If there are any updates, we can update the document
-            if (Object.keys(updateData).length > 0) {
+            if (Object.keys(updateData).length > 0 && fintData.status !== 404 && fintData.status === 200) {
                 updatedDocuments.push(doc._id)
                 report.updateCount += 1
                 updateData["notFoundInFINT"] = {} // Reset notFoundInFINT field
