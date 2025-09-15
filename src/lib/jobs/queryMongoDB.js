@@ -180,13 +180,15 @@ const postFormInfo = async (formInfo, isMock) => {
     }
 }
 
-const getDocuments = async (query, isMock) => {
+const getDocuments = async (query, isMock, isPreimport) => {
     const logPrefix = 'getDocuments'
     const mongoClient = await getMongoClient()
 
     let result
     if(isMock === true) {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).find(query).toArray()
+    } else if (isPreimport === true) {
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).find(query).toArray()
     } else {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
     }
@@ -333,6 +335,61 @@ const postManualContract = async (contract, archiveData, isMock) => {
 }
 
 /**
+ * 
+ * @param {*} contract | contract object from digitroll 
+ * @param {*} targetCollection | historisk | kontrakter | preImportDigitroll
+ * @param {*} contractType | låneavtale | leieavtale
+ * @returns 
+ */
+const postDigitrollContract = async (contract, targetCollection, contractType) => {
+    // Validate inputs 
+    const logPrefix = 'postDigitrollContract'
+    const mongoClient = await getMongoClient()
+    if(!contract) {
+        logger('error', [logPrefix, 'Mangler contract'])
+        return {status: 400, error: 'Mangler contract'}
+    }
+    if(!targetCollection) {
+        logger('error', [logPrefix, 'Mangler targetCollection'])
+        return {status: 400, error: 'Mangler targetCollection'}
+    }
+
+    if(targetCollection === 'historisk') {
+        targetCollection = mongoDB.historicCollection
+    } else if (targetCollection === 'kontrakter') {
+        targetCollection = mongoDB.contractsCollection
+    } else if (targetCollection === 'preImportDigitroll') {
+        targetCollection = mongoDB.preImportDigitrollCollection
+        if(contractType !== 'låneavtale' && contractType !== 'leieavtale') {
+            logger('error', [logPrefix, 'For preImportDigitroll, må contractType være låneavtale eller leieavtale'])
+            return {status: 400, error: 'For preImportDigitroll, må contractType være låneavtale eller leieavtale'}
+        }
+    } else {
+        logger('error', [logPrefix, 'Ugyldig targetCollection'])
+        return {status: 400, error: 'Ugyldig targetCollection'}
+    }
+
+    let result
+    try {
+        if(targetCollection === "preImportDigitroll") {
+            result = await mongoClient.db(mongoDB.dbName).collection(`${targetCollection}-${contractType}`).insertOne(contract)
+        } else {
+            result = await mongoClient.db(mongoDB.dbName).collection(`${targetCollection}`).insertOne(contract)
+        }
+        if(result.acknowledged !== true) {
+            logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument'])
+            throw new Error('Error ved oppretting av manuelt kontraktsdokument')
+        } else {
+            logger('info', [logPrefix, 'Manuelt kontraktsdokument opprettet'])
+            return {result: result, document: contract['Navn']}
+        }
+    } catch (error) {
+        logger('error', [logPrefix, 'Error ved posting til db', `Contract Navn: ${contract['Navn']}`, error])
+        throw new Error('Error ved posting til db', error)
+    }
+}
+
+/**
  * Flytt et dokument til en annen collection og slett det fra den opprinnelige collection
  * @param {*} documentId | _id til dokumentet som skal slettes
  * @param {*} targetCollection | deleted | historic
@@ -340,7 +397,7 @@ const postManualContract = async (contract, archiveData, isMock) => {
  * @returns 
  */
 
-const moveAndDeleteDocument = async (documentId, targetCollection, isMock) => {
+const moveAndDeleteDocument = async (documentId, targetCollection, isMock, isPreImport) => {
     const logPrefix = 'moveAndDeleteDocument'
     const mongoClient = await getMongoClient()
 
@@ -355,9 +412,20 @@ const moveAndDeleteDocument = async (documentId, targetCollection, isMock) => {
         return {status: 400, error: 'Mangler targetCollection'}
     }
 
-    const moveDocumentToTargetCollection = async (documentId, targetCollection, isMock) => {
-        // Flytt dokumentet fra mock collection til deleted collection
-        const docToMove = await mongoClient.db(mongoDB.dbName).collection(`${isMock ? mongoDB.contractsMockCollection : mongoDB.contractsCollection}`).findOne({ '_id': new ObjectId(documentId) })
+    const moveDocumentToTargetCollection = async (documentId, targetCollection, isMock, isPreImport) => {
+        // Find document in the collection you want to delete from. If isMock === true, search in mock collection
+        let docToMove
+        if(isPreImport === true) {
+            logger ('info', [logPrefix, `Leter etter dokument med _id: ${documentId} i ${mongoDB.preImportDigitrollCollection} collection`])
+            docToMove = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).findOne({ '_id': new ObjectId(documentId) })
+        } else if (isMock === true) {
+            logger('info', [logPrefix, `Leter etter dokument med _id: ${documentId} i ${isMock ? mongoDB.contractsMockCollection : mongoDB.contractsCollection} collection`])
+            docToMove = await mongoClient.db(mongoDB.dbName).collection(`${isMock ? mongoDB.contractsMockCollection : mongoDB.contractsCollection}`).findOne({ '_id': new ObjectId(documentId) })
+        }  else {
+            logger('info', [logPrefix, `Leter etter dokument med _id: ${documentId} i ${mongoDB.contractsCollection} collection`])
+            docToMove = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).findOne({ '_id': new ObjectId(documentId) })
+        }
+
         if(!docToMove) {
             logger('error', [logPrefix, 'Dokument ikke funnet for flytting'])
             return {status: 404, error: 'Dokument ikke funnet for flytting'}
@@ -370,6 +438,12 @@ const moveAndDeleteDocument = async (documentId, targetCollection, isMock) => {
             collection = isMock ? mongoDB.deletedMockCollection : mongoDB.deletedCollection
         } else if (targetCollection === 'historic') {
             collection = mongoDB.historicCollection
+        } else if (targetCollection === 'contracts') {
+            collection = mongoDB.contractsCollection
+        } else if (targetCollection === 'duplicates') {
+            collection = mongoDB.duplicatesCollection
+        } else if (targetCollection === 'historic-pcNotDelivered') {
+            collection = mongoDB.historicPcNotDeliveredCollection
         }
         const collectionExists = await mongoClient.db(mongoDB.dbName).listCollections({ name: collection }).hasNext()
         if(!collectionExists) {
@@ -396,7 +470,7 @@ const moveAndDeleteDocument = async (documentId, targetCollection, isMock) => {
     let result
     if(isMock === true) {
         // Flytt dokumentet til target collection
-        const moveResult = await moveDocumentToTargetCollection(documentId, targetCollection, isMock)
+        const moveResult = await moveDocumentToTargetCollection(documentId, targetCollection, isMock, false)
         if(moveResult.status !== 200) {
             return moveResult
         } else {
@@ -405,10 +479,22 @@ const moveAndDeleteDocument = async (documentId, targetCollection, isMock) => {
             logger('info', [logPrefix, `Sletter dokument med _id: ${documentId} fra mock collection`])
             result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).deleteOne({ '_id': new ObjectId(documentId) })
         }
+    } else if (isPreImport === true) {
+        // Flytt dokumentet til target collection
+        isMock = false
+        const moveResult = await moveDocumentToTargetCollection(documentId, targetCollection, isMock, true)
+        if(moveResult.status !== 200) {
+            return moveResult
+        } else {
+            logger('info', [logPrefix, `Dokument flyttet til target collection: ${targetCollection}, fortsetter med sletting fra collection`])
+            // Slett dokumentet i collection
+            logger('info', [logPrefix, `Sletter dokument med _id: ${documentId} fra collection`])
+            result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).deleteOne({ '_id': new ObjectId(documentId) })
+        }
     } else {
         // Flytt dokumentet til target collection
         isMock = false
-        const moveResult = await moveDocumentToTargetCollection(documentId, targetCollection, isMock)
+        const moveResult = await moveDocumentToTargetCollection(documentId, targetCollection, isMock, false)
         if(moveResult.status !== 200) {
             return moveResult
         } else {
@@ -428,7 +514,7 @@ const moveAndDeleteDocument = async (documentId, targetCollection, isMock) => {
 
 }
 
-const updateDocument = async(documentId, updateData, isMock) => {
+const updateDocument = async(documentId, updateData, isMock, isPreImport) => {
     const logPrefix = 'updateDocument'
     const mongoClient = await getMongoClient()
 
@@ -451,6 +537,9 @@ const updateDocument = async(documentId, updateData, isMock) => {
     if(isMock === true) {
         // Update contract in mock collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
+    } else if (isPreImport === true) {
+        // Update contract in preImport collection
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
     } else {
         // Update contract in collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
@@ -459,6 +548,45 @@ const updateDocument = async(documentId, updateData, isMock) => {
     return result
 }
 
+const deleteDocuments = async (query, collectionToDeleteFrom) => {
+    const logPrefix = 'deleteDocuments'
+    const mongoClient = await getMongoClient()
+    if(!query || Object.keys(query).length === 0) {
+        logger('error', [logPrefix, 'Mangler query'])
+        return {status: 400, error: 'Mangler query'}
+    }
+    if(!collectionToDeleteFrom) {
+        logger('error', [logPrefix, 'Mangler collectionToDeleteFrom'])
+        return {status: 400, error: 'Mangler collectionToDeleteFrom'}
+    }
+    let collectionName = ''
+    if(collectionToDeleteFrom === 'kontrakter') {
+        collectionName = mongoDB.contractsCollection
+    } else if (collectionToDeleteFrom === 'kontrakterMock') {
+        collectionName = mongoDB.contractsMockCollection
+    } else if (collectionToDeleteFrom === 'preImportDigitroll') {
+        collectionName = mongoDB.preImportDigitrollCollection
+    } else if (collectionToDeleteFrom === 'historisk') {
+        collectionName = mongoDB.historicCollection
+    }
+
+    if(collectionName === '') {
+        logger('error', [logPrefix, 'Ugyldig collectionToDeleteFrom'])
+        return {status: 400, error: 'Ugyldig collectionToDeleteFrom'}
+    }
+
+    const result = await mongoClient.db(mongoDB.dbName).collection(`${collectionName}`).deleteMany(query)
+    if(result.deletedCount === 0) {
+        logger('info', [logPrefix, 'Ingen dokumenter slettet'])
+        return {status: 404, error: 'Ingen dokumenter slettet'}
+    } else {
+        logger('info', [logPrefix, `Slettet ${result.deletedCount} dokumenter`])
+        return {status: 200, message: `Slettet ${result.deletedCount} dokumenter`}
+    }
+}
+
+
+
 module.exports = {
     postFormInfo,
     updateFormInfo,
@@ -466,5 +594,7 @@ module.exports = {
     updateContractPCStatus,
     postManualContract, 
     moveAndDeleteDocument,
-    updateDocument
+    updateDocument, 
+    postDigitrollContract,
+    deleteDocuments
 }
