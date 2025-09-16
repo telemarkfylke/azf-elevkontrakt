@@ -135,8 +135,9 @@ const updateStudentInfo = async () => {
             // Find the first active elevforhold and update elevInfo field if it is not a match with the fintData
             const fintElevForhold = fintData.elevforhold.find(ef => ef.aktiv === true) 
             // Replace skole, klasse, trinn if fintElevForhold is found and if it is not a match with the document.elevInfo.skole, document.skoleOrgNr, document.elevInfo.klasse, document.elevInfo.trinn
-            // If no active elevforhold is found, the student is no longer a student and we can move the document to the history database if the notFoundInFINT field is more than 10 days old.
-            if(fintElevForhold !== undefined) {
+            // If no active elevforhold is found, the student is no longer a student and we can move the document to the history database if the notFoundInFINT field is more than 5 days old.
+            // We also exlude privatist students and students from skole 70036 (Privatister og elever ved fagskolen)
+            if(fintElevForhold !== undefined && fintElevForhold.kategori.navn.toLowerCase() !== 'privatist' && fintElevForhold.skole.skolenummer !== '70036') {
                 // Check if values are not null or undefined before updating
                 if (fintElevForhold.skole.navn && fintElevForhold.skole.navn !== doc.elevInfo.skole) {
                     updateData["elevInfo.skole"] = fintElevForhold.skole.navn
