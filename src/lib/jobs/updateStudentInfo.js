@@ -36,13 +36,14 @@ const updateStudentInfo = async () => {
     const updatedDocuments = []
     const movedDocuments = []
     const studentsWithoutActiveElevforhold = []
+    const pcNotDeliveredHistoryCountOrRatesNotPaied = [] 
     // Report object to be returned at the end of the function
     // Also used in the teams message
     const report = {
         totalNumberOfDocuments: 0,
         updateCount: 0,
         historyCount: 0,
-        pcNotDeliveredHistoryCount: 0, // Count of documents moved to history because pcInfo.released === "false" or pcInfo.released === "true" and pcInfo.returned === "true"
+        pcNotDeliveredHistoryCountOrRatesNotPaiedCount: 0, // Count of documents moved to history because pcInfo.released === "false" or pcInfo.released === "true" and pcInfo.returned === "true"
         newStudentsNotFoundInFINTCount: 0, // Count of new students not found in FINT during this run "404 Not Found" - "No student with the provided identificator found in FINT"
         studentsWithoutActiveElevforholdCount: 0, // Count of students found in FINT but without any active elevforhold
         updatedDocuments: updatedDocuments,
@@ -65,24 +66,34 @@ const updateStudentInfo = async () => {
             const date = new Date();
             date.setDate(date.getDate() - 5);
             if (doc.notFoundInFINT.date < date) {
-                // If its more than 3 days old, move the document to the history database
-                logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 3 days, moving to history database`])
-                movedDocuments.push(doc._id)
+                // If its more than 5 days old, move the document to the history database
+                logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 5 days, moving to history database`])
+                // Only move the document if the student have returned the pc and the rates not have the value "Ikke Fakturert"
+                if(doc.pcInfo?.returned === "true" && !doc.rates?.some(rate => rate.status === "Ikke Fakturert")) {
+                    movedDocuments.push(doc._id)
+                } else {
+                    pcNotDeliveredHistoryCountOrRatesNotPaiedCount += 1
+                    pcNotDeliveredHistoryCountOrRatesNotPaied.push(doc._id)
+                }
                 // Move the document to the history database
-                try {
-                    // If its time to move the student to the history database, check if the pc status. 
-                    // The student should only be moved if the pc is returned or not delivered to the student. 
-                    // pcInfo.released === "false" or pcInfo.released === "true" and pcInfo.returned === "true"
-                    if (doc.pcInfo?.released === "true" && doc.pcInfo?.returned !== "true") {
-                        logger('warn', [loggerPrefix, `Document with _id ${doc._id} has pcInfo.released === "true" and pcInfo.returned !== "true", not moving to history database`])
-                        await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', false) // Move the document to the historic-pcNotDelivered collection instead
-                        report.pcNotDeliveredHistoryCount += 1
-                    } else {
-                        await moveAndDeleteDocument(doc._id, 'historic', false)
-                        report.historyCount += 1
+                if (movedDocuments.length > 0) {
+                    try {
+                        // If its time to move the student to the history database, check if the pc status. 
+                        // The student should only be moved if the pc is returned or not delivered to the student. 
+                        // pcInfo.released === "false" or pcInfo.released === "true" and pcInfo.returned === "true"
+                        // if (doc.pcInfo?.released === "true" && doc.pcInfo?.returned !== "true") {
+                        //     logger('warn', [loggerPrefix, `Document with _id ${doc._id} has pcInfo.released === "true" and pcInfo.returned !== "true", not moving to history database`])
+                        //     await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', false) // Move the document to the historic-pcNotDelivered collection instead
+                        //     report.pcNotDeliveredHistoryCount += 1
+                        // } else {
+                            await moveAndDeleteDocument(doc._id, 'historic', false)
+                            report.historyCount += 1
+                        // }
+                    } catch (error) {
+                        logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
                     }
-                } catch (error) {
-                    logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+                } else {
+                    logger('info', [loggerPrefix, `Document with _id ${doc._id} has not returned the pc or have rates with status "Ikke Fakturert", not moving to history database`])
                 }
             }
         }
@@ -209,6 +220,13 @@ const updateStudentInfo = async () => {
                         body: [
                             {
                                 type: 'TextBlock',
+                                text: `**${report.totalNumberOfDocuments}** dokument(er) ble funnet og prosessert`,
+                                wrap: true,
+                                weight: 'Bolder',
+                                size: 'Medium'
+                            },
+                            {
+                                type: 'TextBlock',
                                 text: 'Statusrapport - azf-elevkontrakt - Oppdatering av studentinformasjon',
                                 wrap: true,
                                 style: 'heading',
@@ -252,6 +270,17 @@ const updateStudentInfo = async () => {
                                 wrap: true,
                                 weight: 'Bolder',
                                 size: 'Medium'
+                            },
+                            {
+                                type: 'TextBlock',
+                                text: `**${report.pcNotDeliveredHistoryCountOrRatesNotPaiedCountCount}** dokument(er) ble ikke flyttet til historikk-databasen fordi pc ikke er levert tilbake eller har utestående fakturaer`,
+                                wrap: true,
+                                weight: 'Bolder',
+                                size: 'Medium'
+                            },
+                            {
+                                type: 'FactSet',
+                                facts: report.studentsWithoutActiveElevforhold.map(id => ({ title: 'Document ID', value: id }))
                             },
                             {
                                 type: 'FactSet',
