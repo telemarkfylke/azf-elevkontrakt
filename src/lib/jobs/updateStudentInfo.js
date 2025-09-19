@@ -144,7 +144,21 @@ const updateStudentInfo = async () => {
                 logger('info', [loggerPrefix, `UPN not found in fintData for document or UPN is an equal match ${doc._id}`])
             }
             // Find the first active elevforhold and update elevInfo field if it is not a match with the fintData
-            const fintElevForhold = fintData.elevforhold.find(ef => ef.aktiv === true) 
+            let fintElevForhold
+            if (Array.isArray(fintData.elevforhold)) {
+                // Find all the active elevforhold
+                const activeElevforhold = fintData.elevforhold.filter(forhold => forhold.aktiv === true)
+                // If there are multiple active elevforhold, the student might be attending muliple schools. E.g privatist and regular student, or a VO student attending several classes at different schools.
+                // For most students this wont matter, but if the student is a privatist or attending the fagskole (skole number 70036) we should not update the document with this elevforhold.
+                // We should instead use the first elevforhold that is not a privatist or fagskole elevforhold.
+                if (activeElevforhold.length > 1) {
+                    fintElevForhold = activeElevforhold.find(forhold => forhold.kategori.navn.toLowerCase() !== 'privatist' && forhold.skole.skolenummer !== '70036')
+                }
+                // If there is only one active elevforhold, we can use that one
+                if (!fintElevForhold) {
+                    fintElevForhold = activeElevforhold[0]
+                }
+            }
             // Replace skole, klasse, trinn if fintElevForhold is found and if it is not a match with the document.elevInfo.skole, document.skoleOrgNr, document.elevInfo.klasse, document.elevInfo.trinn
             // If no active elevforhold is found, the student is no longer a student and we can move the document to the history database if the notFoundInFINT field is more than 5 days old.
             // We also exlude privatist students and students from skole 70036 (Privatister og elever ved fagskolen)
@@ -260,10 +274,11 @@ const updateStudentInfo = async () => {
                                 weight: 'Bolder',
                                 size: 'Medium'
                             },
-                            {
-                                type: 'FactSet',
-                                facts: report.studentsWithoutActiveElevforhold.map(id => ({ title: 'Document ID', value: id }))
-                            },
+                            // So many that the teams request fails, check logs instead :P
+                            // {
+                            //     type: 'FactSet',
+                            //     facts: report.studentsWithoutActiveElevforhold.map(id => ({ title: 'Document ID', value: id }))
+                            // },
                             {
                                 type: 'TextBlock',
                                 text: `**${report.newStudentsNotFoundInFINTCount}** nye student(er) ble ikke funnet i FINT`,
