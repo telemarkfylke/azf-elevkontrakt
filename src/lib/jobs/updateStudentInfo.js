@@ -201,8 +201,8 @@ const updateStudentInfo = async () => {
                     continue
                 }
             }
-             // If there are any updates, we can update the document
-            if (Object.keys(updateData).length > 0 && fintData.status !== 404 && fintData.status === 200) {
+            // If there are any updates, we can update the document
+            if (Object.keys(updateData).length > 0 && fintData.status !== 404) {
                 updatedDocuments.push(doc._id)
                 report.updateCount += 1
                 updateData["notFoundInFINT"] = {} // Reset notFoundInFINT field
