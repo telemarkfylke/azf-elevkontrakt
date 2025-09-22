@@ -72,7 +72,7 @@ const updateStudentInfo = async () => {
                 if(doc.pcInfo?.returned === "true" && !doc.rates?.some(rate => rate.status === "Ikke Fakturert")) {
                     movedDocuments.push(doc._id)
                 } else {
-                    pcNotDeliveredHistoryCountOrRatesNotPaiedCount += 1
+                    report.pcNotDeliveredHistoryCountOrRatesNotPaiedCount += 1
                     pcNotDeliveredHistoryCountOrRatesNotPaied.push(doc._id)
                 }
                 // Move the document to the history database
@@ -288,7 +288,7 @@ const updateStudentInfo = async () => {
                             },
                             {
                                 type: 'TextBlock',
-                                text: `**${report.pcNotDeliveredHistoryCountOrRatesNotPaiedCountCount}** dokument(er) ble ikke flyttet til historikk-databasen fordi pc ikke er levert tilbake eller har utestående fakturaer`,
+                                text: `**${report.pcNotDeliveredHistoryCountOrRatesNotPaiedCount}** dokument(er) ble ikke flyttet til historikk-databasen fordi pc ikke er levert tilbake eller har utestående fakturaer`,
                                 wrap: true,
                                 weight: 'Bolder',
                                 size: 'Medium'
