@@ -78,7 +78,14 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
         }
     }
     try {
-        schoolInfoData = await schoolInfo(await studentData.elevforhold[0].skole.organisasjonsId)
+        const activeElevforhold = studentData.elevforhold.filter(forhold => forhold.aktiv === true)
+         if (activeElevforhold.length > 1) {
+            fintElevForhold = activeElevforhold.find(forhold => forhold.kategori.navn.toLowerCase() !== 'privatist' && forhold.skole.skolenummer !== '70036')
+        }
+        if (!fintElevForhold) {
+            fintElevForhold = activeElevforhold[0]
+        }
+        schoolInfoData = await schoolInfo(await fintElevForhold.skole.organisasjonsId)
         schoolInfoData.organisasjonsnummer = schoolInfoList.find(school => school.officeLocation.toString() === schoolInfoData.navn).orgNr
         if(schoolInfoData.organisasjonsnummer === undefined) {
             logger('error', [logPrefix, 'Fant ikke organisasjonsnummer for skolen', schoolInfoData.navn])

@@ -82,6 +82,12 @@ const schoolInfoList = [
     tilgangsgruppe: 'Elev Vest-Telemark vgs',
     officeLocation: 'Vest-Telemark vgs avd Dalen',
     primaryLocation: 'Vest-Telemark videregående skole',
+  },
+  {
+    orgNr: 998151228,
+    tilgangsgruppe: '',
+    officeLocation: 'Telemark fylkeskommune privatisteksamen',
+    primaryLocation: 'Telemark fylkeskommune privatisteksamen',
   }
 ]
 
