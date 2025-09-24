@@ -79,6 +79,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     }
     try {
         const activeElevforhold = studentData.elevforhold.filter(forhold => forhold.aktiv === true)
+        let fintElevForhold
          if (activeElevforhold.length > 1) {
             fintElevForhold = activeElevforhold.find(forhold => forhold.kategori.navn.toLowerCase() !== 'privatist' && forhold.skole.skolenummer !== '70036')
         }
