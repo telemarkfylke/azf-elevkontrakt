@@ -106,7 +106,7 @@ const updateStudentInfo = async () => {
     for (const doc of documents.result) {
         const updateData = {}
         const fnr = doc.elevInfo.fnr
-        const fintData = await student(fnr, false, true)
+        const fintData = await student(fnr, false, false)
         if (fintData.status === 404 && fintData.message === 'Personen er ikke en student' && fintData.status !== 200) {
             // If the student is not found. Try to move the document to the history database. 
             try {
