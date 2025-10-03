@@ -1,5 +1,5 @@
 const { app } = require('@azure/functions');
-const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument } = require('../lib/jobs/queryMongoDB');
+const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument } = require('../lib/jobs/queryMongoDB');
 const { validateRoles } = require('../lib/auth/validateRoles');
 const { archiveDocument } = require('../lib/jobs/queryArchive');
 const { logger } = require('@vtfk/logger');
@@ -109,6 +109,36 @@ app.http('handleDbRequest', {
                             } catch (error) {
                                 logger('error', [logPrefix, `Error ved innlevering eller utlevering av PC, kontrakt _id: ${jsonBody.contractID}`, error])
                                 throw new Error('Internal server error', error)   
+                            }
+                        } else if (jsonBody.contractID && jsonBody.updateData === true) {
+                            const logPrefix = `handleDbRequest - PUT - updateData - contractID: ${jsonBody.contractID}`
+
+                            // Handle updates to the document in the database from an external system.
+                            const changeLog = jsonBody.changeLog || []
+                            const dataToUpdate = jsonBody.data || {}
+
+                            // Merge changeLog and dataToUpdate into one object to be stored in the database
+                            const updateData = {
+                                data: dataToUpdate,
+                                changeLog: changeLog
+                            }
+
+                            if(changeLog.length === 0) {
+                                logger('warn', [logPrefix, `Ingen endringer oppgitt i changeLog for dokument med kontraktID: ${jsonBody.contractID}. Ingen oppdatering utført.`])
+                                return { status: 400, body: `Bad Request, no changes provided in changeLog` }
+                            }
+                            if(Object.keys(dataToUpdate).length === 0) {
+                                logger('warn', [logPrefix, `Ingen data oppgitt i data for dokument med kontraktID: ${jsonBody.contractID}. Ingen oppdatering utført.`])
+                                return { status: 400, body: `Bad Request, no data provided in data` }
+                            }
+                            
+                            try {
+                                logger('info', [logPrefix, `Oppdaterer dokument med kontraktID: ${jsonBody.contractID}`])
+                                const result = await updateDocument(jsonBody.contractID, updateData)
+                                return { status: 200, jsonBody: result }
+                            } catch (error) {
+                                logger('error', [logPrefix, `Error ved oppdatering av dokument med kontraktID: ${jsonBody.contractID}`, error])
+                                return { status: 500, body: `Internal server error` }
                             }
                         } else {
                             // Update the database

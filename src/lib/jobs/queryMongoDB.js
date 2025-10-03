@@ -180,16 +180,29 @@ const postFormInfo = async (formInfo, isMock) => {
     }
 }
 
-const getDocuments = async (query, isMock, isPreimport) => {
+const getDocuments = async (query, isMock, isPreimport, løpenummer) => {
     const logPrefix = 'getDocuments'
     const mongoClient = await getMongoClient()
+
+    if(!query || query === undefined) {
+        logger('error', [logPrefix, 'Mangler query'])
+        return {status: 400, error: 'Mangler query'}
+    }
+    
+    if(!isMock) { isMock = false }
+    if(!isPreimport) { isPreimport = false }
+    if(!løpenummer) { løpenummer = false }
+    
 
     let result
     if(isMock === true) {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).find(query).toArray()
     } else if (isPreimport === true) {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).find(query).toArray()
-    } else {
+    } else if (løpenummer === true) {
+        result = await mongoClient.db(mongoDB.dbnameXledgerSerialNumbers).collection(`${mongoDB.serialnumberCollection}`).find(query).sort({ 'iterationNumber': -1 }).toArray()
+    } 
+    else {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
     }
     if(result.length === 0) {
@@ -540,7 +553,10 @@ const updateDocument = async(documentId, updateData, isMock, isPreImport) => {
     } else if (isPreImport === true) {
         // Update contract in preImport collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
-    } else {
+    } else if(updateData.changeLog) {
+        // If changeLog is being updated, push new entry to array
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
+    }else {
         // Update contract in collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
     }
@@ -585,6 +601,27 @@ const deleteDocuments = async (query, collectionToDeleteFrom) => {
     }
 }
 
+const postSerialNumber = async (serialNumber) => {
+    const logPrefix = 'postSerialNumber'
+    const mongoClient = await getMongoClient()
+    if(!serialNumber) {
+        logger('error', [logPrefix, 'Mangler serialNumber'])
+        return {status: 400, error: 'Mangler serialNumber'}
+    }
+    try {
+        const result = await mongoClient.db(mongoDB.dbnameXledgerSerialNumbers).collection(`${mongoDB.serialnumberCollection}`).insertOne(serialNumber)
+        if(result.acknowledged !== true) {
+            logger('error', [logPrefix, 'Error ved oppretting av serialNumber'])
+            throw new Error('Error ved oppretting av serialNumber')
+        } else {
+            logger('info', [logPrefix, 'SerialNumber opprettet'])
+            return {result: result, document: serialNumber}
+        }
+    } catch (error) {
+        logger('error', [logPrefix, 'Error poster til db', error])
+        throw new Error('Error poster til db', error)
+    }
+}
 
 
 module.exports = {
@@ -596,5 +633,6 @@ module.exports = {
     moveAndDeleteDocument,
     updateDocument, 
     postDigitrollContract,
-    deleteDocuments
+    deleteDocuments,
+    postSerialNumber
 }
