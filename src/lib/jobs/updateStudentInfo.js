@@ -106,6 +106,7 @@ const updateStudentInfo = async () => {
     for (const doc of documents.result) {
         const updateData = {}
         const fnr = doc.elevInfo.fnr
+        let studentGotElevforhold = true
         const fintData = await student(fnr, false, false)
         if (fintData.status === 404 && fintData.message === 'Personen er ikke en student' && fintData.status !== 200) {
             // If the student is not found. Try to move the document to the history database. 
@@ -195,14 +196,15 @@ const updateStudentInfo = async () => {
                 try {
                     await moveToHistoryDatabase(doc, updateData)
                     report.studentsWithoutActiveElevforholdCount += 1
+                    studentGotElevforhold = false
                     studentsWithoutActiveElevforhold.push(doc._id)
                 } catch (error) {
                     logger('error', [loggerPrefix, `Error handling document with _id ${doc._id}`, error])
                     continue
                 }
             }
-            // If there are any updates, we can update the document
-            if (Object.keys(updateData).length > 0 && fintData.status !== 404) {
+            // If there are any updates, we can update the document as long as the studentGotElevforhold is true otherwise the document have already been handled in the moveToHistoryDatabase function
+            if (Object.keys(updateData).length > 0 && fintData.status !== 404 && studentGotElevforhold === true) {
                 updatedDocuments.push(doc._id)
                 report.updateCount += 1
                 updateData["notFoundInFINT"] = {} // Reset notFoundInFINT field
