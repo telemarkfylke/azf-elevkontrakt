@@ -32,7 +32,7 @@ app.http('handleDbRequest', {
 
             // Get documents from the database
             try {
-                const result = await getDocuments(query, isMock)
+                const result = await getDocuments(query, isMock ? 'mock' : 'regular')
                 return { status: 200, jsonBody: result }
             } catch (error) {
                 logger('error', [logPrefix, 'Error fetching documents from database', error])

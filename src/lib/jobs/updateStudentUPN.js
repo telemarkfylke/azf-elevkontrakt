@@ -19,7 +19,7 @@ const updateStudentUPN = async () => {
         "elevInfo.upn": "Ukjent"
     }
 
-    const documents = await getDocuments(query, false)
+    const documents = await getDocuments(query, 'regular')
 
     /**
     * For each document, we will fetch the student data from FINT and update the UPN.

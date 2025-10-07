@@ -179,8 +179,14 @@ const postFormInfo = async (formInfo, isMock) => {
         return {status: 500, error: 'Error poster til db', refId: formInfo.refId, acosName: formInfo.acosName}
     }
 }
-
-const getDocuments = async (query, isMock, isPreimport, løpenummer) => {
+/**
+ * 
+ * @param {Object} query 
+ * @param {string} documentType | preImport | mock | regular | løpenummer | settings
+ * @returns 
+ */
+const getDocuments = async (query, documentType) => {
+// const getDocuments = async (query, isMock, isPreimport, løpenummer) => {
     const logPrefix = 'getDocuments'
     const mongoClient = await getMongoClient()
 
@@ -188,23 +194,32 @@ const getDocuments = async (query, isMock, isPreimport, løpenummer) => {
         logger('error', [logPrefix, 'Mangler query'])
         return {status: 400, error: 'Mangler query'}
     }
-    
-    if(!isMock) { isMock = false }
-    if(!isPreimport) { isPreimport = false }
-    if(!løpenummer) { løpenummer = false }
+
+    if(!documentType) {
+        logger('error', [logPrefix, 'Mangler documentType'])
+        return {status: 400, error: 'Mangler documentType'}
+    } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings') {
+        logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
+        return {status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'}
+    }
     
 
     let result
-    if(isMock === true) {
+    if(documentType === 'mock') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).find(query).toArray()
-    } else if (isPreimport === true) {
+    } else if (documentType === 'preimport') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).find(query).toArray()
-    } else if (løpenummer === true) {
+    } else if (documentType === 'løpenummer') {
         result = await mongoClient.db(mongoDB.dbnameXledgerSerialNumbers).collection(`${mongoDB.serialnumberCollection}`).find(query).sort({ 'iterationNumber': -1 }).toArray()
-    } 
-    else {
+    } else if (documentType === 'settings') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
+    } else if (documentType === 'regular') {
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
+    } else {
+        logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
+        return {status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'}
     }
+
     if(result.length === 0) {
         logger('info', [logPrefix, 'Fant ingen dokumenter'])
         return {status: 404, error: 'Fant ingen dokumenter'}
