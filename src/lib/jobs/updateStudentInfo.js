@@ -60,7 +60,7 @@ const updateStudentInfo = async () => {
             // Update the document with the new field
             logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT, updating document`])
             updatedDocuments.push(doc._id)
-            await updateDocument(doc._id, updateData)
+            await updateDocument(doc._id, updateData, 'regular')
         } else {
             // Check if the date is more than 5 days old.
             const date = new Date();
@@ -210,7 +210,7 @@ const updateStudentInfo = async () => {
                 updateData["notFoundInFINT"] = {} // Reset notFoundInFINT field
                 updateData["lastFINTSyncTimeStamp"] = new Date() // Update the lastFINTSyncTimeStamp to the current date
                 logger('info', [loggerPrefix, `Updating document ${doc._id} with new data`])
-                await updateDocument(doc._id, updateData)
+                await updateDocument(doc._id, updateData, 'regular')
             } else {
                 logger('info', [loggerPrefix, `No updates needed for document ${doc._id}`])
             }

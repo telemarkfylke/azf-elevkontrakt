@@ -30,7 +30,7 @@ const updateStudentUPN = async () => {
         if(studentData) {
             if(doc.elevInfo.upn !== studentData.upn) {
                 logger("info", [loggerPrefix, `Updating UPN from ${doc.elevInfo.upn} to ${studentData.upn}`])
-                await updateDocument(doc._id, { "elevInfo.upn": studentData.upn }, false)
+                await updateDocument(doc._id, { "elevInfo.upn": studentData.upn }, 'regular')
             } else {
                 logger("info", [loggerPrefix, `UPN is already up to date for student with UPN: ${doc.elevInfo.upn}`])
             }

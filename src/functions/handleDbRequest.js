@@ -134,7 +134,7 @@ app.http('handleDbRequest', {
                             
                             try {
                                 logger('info', [logPrefix, `Oppdaterer dokument med kontraktID: ${jsonBody.contractID}`])
-                                const result = await updateDocument(jsonBody.contractID, updateData)
+                                const result = await updateDocument(jsonBody.contractID, updateData, 'regularWithChangeLog')
                                 return { status: 200, jsonBody: result }
                             } catch (error) {
                                 logger('error', [logPrefix, `Error ved oppdatering av dokument med kontraktID: ${jsonBody.contractID}`, error])

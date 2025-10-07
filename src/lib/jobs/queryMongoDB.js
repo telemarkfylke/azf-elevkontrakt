@@ -526,8 +526,14 @@ const moveAndDeleteDocument = async (documentId, targetCollection, isMock, isPre
     return {status: 200, message: 'Dokument slettet'}
 
 }
-
-const updateDocument = async(documentId, updateData, isMock, isPreImport) => {
+/**
+ * 
+ * @param {string} documentId 
+ * @param {object} updateData 
+ * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings
+ * @returns 
+ */
+const updateDocument = async(documentId, updateData, documentType) => {
     const logPrefix = 'updateDocument'
     const mongoClient = await getMongoClient()
 
@@ -541,24 +547,38 @@ const updateDocument = async(documentId, updateData, isMock, isPreImport) => {
         logger('error', [logPrefix, 'Mangler updateData'])
         return {status: 400, error: 'Mangler updateData'}
     }
+
+    if(!documentType) {
+        logger('error', [logPrefix, 'Mangler documentType'])
+        return {status: 400, error: 'Mangler documentType'}
+    } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings') {
+        logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog eller settings'])
+        return {status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog eller settings'}
+    }
     
     // Check what keys are being updated
     const updatedKeys = Object.keys(updateData)
     logger('info', [logPrefix, `Oppdaterer dokument med _id: ${documentId}`, `Oppdaterer felter: ${updatedKeys.join(', ')}`])
 
-    let result 
-    if(isMock === true) {
+    let result
+    if(documentType === 'mock') {
         // Update contract in mock collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
-    } else if (isPreImport === true) {
+    } else if (documentType === 'preImport') {
         // Update contract in preImport collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
-    } else if(updateData.changeLog) {
+    } else if(documentType === 'regularWithChangeLog') {
         // If changeLog is being updated, push new entry to array
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
-    }else {
+    }else if (documentType === 'regular'){
         // Update contract in collection
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData })
+    } else if (documentType === 'settings') {
+        // Update settings in settings collection
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).updateOne({ '_id': new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
+    } else {
+        logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport eller regular'])
+        return {status: 400, error: 'Ugyldig documentType, må være mock, preImport eller regular'}
     }
 
     return result
