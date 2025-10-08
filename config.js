@@ -28,6 +28,7 @@ module.exports = {
     mongoDB: {
         connectionString: process.env.MONGODB_CONNECTION_STRING,
         dbName: process.env.MONGODB_DB_NAME,
+        dbnameXledgerSerialNumbers: process.env.MONGODB_DB_NAME_XLEDGER_SERIALNUMBERS,
         errorCollection: process.env.MONGODB_ERROR_COLLECTION,
         contractsCollection: process.env.MONGODB_CONTRACTS_COLLECTION,
         errorMockCollection: process.env.MONGODB_ERROR_MOCK_COLLECTION,
@@ -35,6 +36,11 @@ module.exports = {
         deletedCollection: process.env.MONGODB_DELETED_COLLECTION,
         deletedMockCollection: process.env.MONGODB_DELETED_MOCK_COLLECTION,
         historicCollection: process.env.MONGODB_HISTORY_COLLECTION,
+        preImportDigitrollCollection: process.env.MONGODB_PRE_IMPORT_DIGITROLL_COLLECTION,
+        duplicatesCollection: process.env.MONGODB_DUPLICATES_COLLECTION,
+        historicPcNotDeliveredCollection: process.env.MONGODB_HISTORIC_PC_NOT_DELIVERED_COLLECTION,
+        serialnumberCollection: process.env.MONGODB_LØPENUMMER_COLLECTION,
+        settingsCollection: process.env.MONGODB_SETTINGS_COLLECTION
     },
     archive: {
         url: process.env.ARCHIVE_URL,
