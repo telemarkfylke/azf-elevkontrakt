@@ -212,7 +212,7 @@ const getDocuments = async (query, documentType) => {
     } else if (documentType === 'løpenummer') {
         result = await mongoClient.db(mongoDB.dbnameXledgerSerialNumbers).collection(`${mongoDB.serialnumberCollection}`).find(query).sort({ 'iterationNumber': -1 }).toArray()
     } else if (documentType === 'settings') {
-        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).find(query).toArray()
     } else if (documentType === 'regular') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
     } else {
