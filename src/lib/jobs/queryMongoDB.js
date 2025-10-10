@@ -658,6 +658,28 @@ const postSerialNumber = async (serialNumber) => {
     }
 }
 
+const postInitialSettings = async (settings) => {
+    const logPrefix = 'postInitialSettings'
+    const mongoClient = await getMongoClient()
+    if(!settings) {
+        logger('error', [logPrefix, 'Mangler settings'])
+        return {status: 400, error: 'Mangler settings'}
+    }
+    try {
+        const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).insertOne(settings)
+        if(result.acknowledged !== true) {
+            logger('error', [logPrefix, 'Error ved oppretting av settings'])
+            throw new Error('Error ved oppretting av settings')
+        } else {
+            logger('info', [logPrefix, 'Settings opprettet'])
+            return {result: result, document: settings}
+        }
+    } catch (error) {
+        logger('error', [logPrefix, 'Error poster til db', error])
+        throw new Error('Error poster til db', error)
+    }
+}
+
 
 module.exports = {
     postFormInfo,
@@ -669,5 +691,6 @@ module.exports = {
     updateDocument, 
     postDigitrollContract,
     deleteDocuments,
-    postSerialNumber
+    postSerialNumber,
+    postInitialSettings
 }
