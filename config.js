@@ -39,7 +39,7 @@ module.exports = {
         preImportDigitrollCollection: process.env.MONGODB_PRE_IMPORT_DIGITROLL_COLLECTION,
         duplicatesCollection: process.env.MONGODB_DUPLICATES_COLLECTION,
         historicPcNotDeliveredCollection: process.env.MONGODB_HISTORIC_PC_NOT_DELIVERED_COLLECTION,
-        serialnumberCollection: process.env.MONGODB_LØPENUMMER_COLLECTION,
+        serialnumberCollection: process.env.MONGODB_LOPENUMMER_COLLECTION,
         settingsCollection: process.env.MONGODB_SETTINGS_COLLECTION
     },
     archive: {
