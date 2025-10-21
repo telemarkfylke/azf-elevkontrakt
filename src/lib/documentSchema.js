@@ -18,7 +18,7 @@ const getBillingYear = (rate) => {
     } else {
         throw new Error('Invalid rate value. Rate must be 1, 2, or 3.')
     }
-    return year + rateAdjustment
+    return (year + rateAdjustment).toString()
 }
 
 

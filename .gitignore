@@ -51,3 +51,4 @@ __azurite_db*__.json
 
 #folders
 src/data
+csvImportTemplates/test_files

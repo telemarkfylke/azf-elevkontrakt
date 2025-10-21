@@ -101,6 +101,18 @@ const syncPrivatePerson = async (ssn) => {
 // Sync Elev
 const syncElevMappe = async (ssn) => {
   const accessToken = await getAccessToken(archive.scope)
+  // For manual testing, you can use the following body structure:
+  // const body = {
+  //   "fakeSsn": true,
+  //   "birthdate": "yyyy-mm-dd", // Replace with actual birthdate if needed
+  //   "gender": "f", // f/m
+  //   "name": "fult navn", // Full name of the student
+  //   "firstName": "fornavn",
+  //   "lastName": "etternavn",
+  //   "streetAddress": "Adresse som i p360",
+  //   "zipCode": "",
+  //   "zipPlace": ""
+  // }
   const body = {
     ssn: ssn,
     forceUpdate: true // Set to true to force update the person in the archive
