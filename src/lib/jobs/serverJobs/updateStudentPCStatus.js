@@ -159,7 +159,8 @@ const sendTeamsMessage = async (message, type) => {
             ]
         }
     const headers = { contentType: 'application/vnd.microsoft.teams.card.o365connector' }
-    await axios.post(teams.webhook, teamsMsg, { headers })
+    const postStatus = await axios.post(teams.webhook, teamsMsg, { headers })
+    return postStatus
 }
 
 /**
@@ -182,7 +183,7 @@ const updateStudentPCStatus = async (type) => {
         query = {
             "pcInfo.released": "false",
         }
-        csvFilePath = './src/data/pc_files/utleveringer.csv' // The CSV file with the PC status updates
+        csvFilePath = `${process.env.SERVER_PATH_UTLEVERING}/utleveringer.csv` // The CSV file with the PC status updates
         csvFileName = 'utleveringer.csv'
         oldDataFilePath = './src/data/pc_files/utlevering_matchNotFoundInMongoDB.csv'
     } else if (type === 'innlevering') {
@@ -190,7 +191,7 @@ const updateStudentPCStatus = async (type) => {
             "pcInfo.released": "true",
             "pcInfo.returned": "false",
         }
-        csvFilePath = './src/data/pc_files/innleveringer.csv' // The CSV file with the PC status updates
+        csvFilePath = `${process.env.SERVER_PATH_UTLEVERING}/innleveringer.csv` // The CSV file with the PC status updates
         csvFileName = 'innleveringer.csv'
         oldDataFilePath = './src/data/pc_files/innlevering_matchNotFoundInMongoDB.csv'
     }
@@ -345,7 +346,7 @@ const updateStudentPCStatus = async (type) => {
         // Check if the finished folder exists, if not, create it
         await fs.mkdir('./src/data/finished', { recursive: true }) 
         // Rename the file to move it to the finished folder
-        await fs.rename(csvFilePath, finishedFilePath)
+        await fs.copyFile(csvFilePath, finishedFilePath)
         logger("info", [loggerPrefix, `Moved the CSV file to the finished folder: ${finishedFilePath}`])
         
     } catch (error) {

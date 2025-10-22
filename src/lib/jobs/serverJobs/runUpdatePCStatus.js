@@ -8,6 +8,6 @@
 
     logger('info', ['Updating student PC status for utlevering']);
 
-    // await updateStudentPCStatus('utlevering');
+    await updateStudentPCStatus('utlevering')
     logger('info', ['Finished updateStudentPCStatus job for utlevering']);
 })()
