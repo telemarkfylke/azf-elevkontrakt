@@ -9,8 +9,8 @@
     const statusUpdateUtlevering = await updateStudentPCStatus('utlevering')
     logger('info', [`Finished updateStudentPCStatus job for utlevering. Number of utlevert: ${statusUpdateUtlevering.updateCount}`]);
 
-    logger('info', ["Updating student PC status fir innlevering"])
-    const statusUpdateInnlevering = await updateStudentPCStatus('innlevering')
-    logger('info', [`Finished updateStudentPCStatus job for innlevering. Number of innlevert: ${statusUpdateInnlevering.updateCount}`])
-    return 
+    // logger('info', ["Updating student PC status fir innlevering"])
+    // const statusUpdateInnlevering = await updateStudentPCStatus('innlevering')
+    // logger('info', [`Finished updateStudentPCStatus job for innlevering. Number of innlevert: ${statusUpdateInnlevering.updateCount}`])
+    return true
 })()
