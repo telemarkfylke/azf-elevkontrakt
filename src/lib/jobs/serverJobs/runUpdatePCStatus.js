@@ -2,7 +2,6 @@
     require('dotenv').config();
     const { logger } = require('@vtfk/logger');
     const { updateStudentPCStatus } = require('./updateStudentPCStatus.js');
-    const fs = require('fs').promises;
 
     logger('info', ['Starting updateStudentPCStatus job']);
 
