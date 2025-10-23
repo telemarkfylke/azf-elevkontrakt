@@ -1,4 +1,4 @@
-const runJob = async () => {
+(async () => {
     require('dotenv').config()
     const { logger } = require('@vtfk/logger')
     const { updateStudentPCStatus } = require('./updateStudentPCStatus.js')
@@ -13,7 +13,6 @@ const runJob = async () => {
     // const statusUpdateInnlevering = await updateStudentPCStatus('innlevering')
     // logger('info', [`Finished updateStudentPCStatus job for innlevering. Number of innlevert: ${statusUpdateInnlevering.updateCount}`])
 
-    return true
-}
-
-runJob()
+    // Finished
+    process.exit(1)
+})()
