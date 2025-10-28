@@ -53,7 +53,7 @@ const generateSerialNumber = async (rateNumber) => {
         const latestSerialNumber = latestSerialNumberEntry.iterationNumber
         iterationNumber = latestSerialNumber + 1
     }
-    const serialNumber = `${system}-${String(iterationNumber).padStart(7, '0')}-${rateNum}-${currentYear}-${randomStr}`
+    const serialNumber = `${system}-${String(iterationNumber).padStart(9, '0')}-${rateNum}-${currentYear}-${randomStr}`
 
     // Save the new serial number to the database
     const serialNumberEntry = {
