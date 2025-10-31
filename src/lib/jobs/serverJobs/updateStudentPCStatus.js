@@ -271,67 +271,71 @@ const updateStudentPCStatus = async (type) => {
         }
     }
 
+    // We dont need this part anymore, but might be useful later
+
     // Before updating the "matchNotFoundInMongoDB.csv" file with new rows, check if any existing rows now match update the mongoDb document and remove the corresponding rows from the CSV.
     // Read and parse the existing CSV file
-    const oldDataFromMatchNotFoundInMongoDB = await readAndParseCSV(oldDataFilePath)
+    // const oldDataFromMatchNotFoundInMongoDB = await readAndParseCSV(oldDataFilePath)
     // Check if the current row exists in the old data using the "Email" field
-    for (const row of oldDataFromMatchNotFoundInMongoDB) {
-        const email = (row["Email"] || "").trim().toLowerCase()
-        if (!email) {
-            logger("info", [loggerPrefix, "Old CSV row missing Email field, skipping"])
-            continue
-        }
-        let updateData = {}
-        if (type === 'utlevering') {
-            updateData = {"pcInfo.released": "true", "pcInfo.releasedDate": releaseDate, "pcInfo.releaseBy": row["Assigned Team"]}
-        } else if (type === 'innlevering') {
-            updateData = {"pcInfo.returned": "true", "pcInfo.returnedDate": new Date(), "pcInfo.returnedRegisteredBy": row["Assigned Team"]}
-        }
-        const matchedDoc = docByUpn.get(email)
-        if (matchedDoc) {
-            updateCountOldFile++
-            // Update the PC status in the matched document
-            logger("info", [loggerPrefix, `Updating the PC status for ${updateCount} students`])
-            try {
-                await updateDocument(matchedDoc._id, updateData, 'regular')
-                logger("info", [loggerPrefix, `Updated PC status for student with UPN-startswith: ${email.split('@')[0]}`])
-            } catch (error) {
-                logger("error", [loggerPrefix, "Error updating PC status for students", error && error.message ? error.message : error])
-                throw error
-            }
-            // If matched find the row in oldDataFromMatchNotFoundInMongoDB and remove it from the csvRowsForMatchNotFoundInMongoDB array
-            const index = oldDataFromMatchNotFoundInMongoDB.findIndex(r => r["Email"].trim().toLowerCase() === email)
-            if (index !== -1) {
-                csvRowsToRemoveFromOldFile.push(oldDataFromMatchNotFoundInMongoDB[index])
-            }
-        } else {
-            // Found in CSV, but not found in MongoDB
-            // logger("info", [loggerPrefix, `Student with UPN ${email} from CSV not found in MongoDB`])
-            const newRow = {
-                "Assigned Team": row["Assigned Team"] || "",
-                "Created Date Time": row["Created Date Time"] || "",
-                "Email": row["Email"] || "",
-                "Full Name": row["Full Name"] || ""
-            }
-            csvRowsForMatchNotFoundInMongoDB.push(newRow)
-            notFoundCountOldFile++
-        }
-    }
+    // for (const row of oldDataFromMatchNotFoundInMongoDB) {
+    //     const email = (row["Email"] || "").trim().toLowerCase()
+    //     if (!email) {
+    //         logger("info", [loggerPrefix, "Old CSV row missing Email field, skipping"])
+    //         continue
+    //     }
+    //     let updateData = {}
+    //     if (type === 'utlevering') {
+    //         updateData = {"pcInfo.released": "true", "pcInfo.releasedDate": releaseDate, "pcInfo.releaseBy": row["Assigned Team"]}
+    //     } else if (type === 'innlevering') {
+    //         updateData = {"pcInfo.returned": "true", "pcInfo.returnedDate": new Date(), "pcInfo.returnedRegisteredBy": row["Assigned Team"]}
+    //     }
+    //     const matchedDoc = docByUpn.get(email)
+    //     if (matchedDoc) {
+    //         updateCountOldFile++
+    //         // Update the PC status in the matched document
+    //         logger("info", [loggerPrefix, `Updating the PC status for ${updateCount} students`])
+    //         try {
+    //             await updateDocument(matchedDoc._id, updateData, 'regular')
+    //             logger("info", [loggerPrefix, `Updated PC status for student with UPN-startswith: ${email.split('@')[0]}`])
+    //         } catch (error) {
+    //             logger("error", [loggerPrefix, "Error updating PC status for students", error && error.message ? error.message : error])
+    //             throw error
+    //         }
+    //         // If matched find the row in oldDataFromMatchNotFoundInMongoDB and remove it from the csvRowsForMatchNotFoundInMongoDB array
+    //         const index = oldDataFromMatchNotFoundInMongoDB.findIndex(r => r["Email"].trim().toLowerCase() === email)
+    //         if (index !== -1) {
+    //             csvRowsToRemoveFromOldFile.push(oldDataFromMatchNotFoundInMongoDB[index])
+    //         }
+    //     } else {
+    //         // Found in CSV, but not found in MongoDB
+    //         // logger("info", [loggerPrefix, `Student with UPN ${email} from CSV not found in MongoDB`])
+    //         const newRow = {
+    //             "Assigned Team": row["Assigned Team"] || "",
+    //             "Created Date Time": row["Created Date Time"] || "",
+    //             "Email": row["Email"] || "",
+    //             "Full Name": row["Full Name"] || ""
+    //         }
+    //         csvRowsForMatchNotFoundInMongoDB.push(newRow)
+    //         notFoundCountOldFile++
+    //     }
+    // }
 
-    // In csvRowsToRemoveFromOldFile we have the rows that were found in MongoDB when checking the old CSV file. Remove them from the file matchNotFoundInMongoDB.csv
-    if (csvRowsToRemoveFromOldFile.length > 0) {
-        logger("info", [loggerPrefix, `Removing ${csvRowsToRemoveFromOldFile.length} rows from the old CSV file "${type}_matchNotFoundInMongoDB.csv"`])
-        // Read the existing CSV file
-        const existingData = await readAndParseCSV(oldDataFilePath)
-        // Filter out the rows that are in csvRowsToRemoveFromOldFile
-        const updatedData = existingData.filter(row => !csvRowsToRemoveFromOldFile.some(r => r["Email"].trim().toLowerCase() === row["Email"].trim().toLowerCase()))
-        // Write the updated data back to the CSV file
-        const header = Object.keys(updatedData[0] || {}).join(";")
-        const rows = updatedData.map(row => Object.values(row).join(";")).join("\n")
-        await fs.writeFile(oldDataFilePath, `${header}\n${rows}`, "utf-8")
-    }
+    // // In csvRowsToRemoveFromOldFile we have the rows that were found in MongoDB when checking the old CSV file. Remove them from the file matchNotFoundInMongoDB.csv
+    // if (csvRowsToRemoveFromOldFile.length > 0) {
+    //     logger("info", [loggerPrefix, `Removing ${csvRowsToRemoveFromOldFile.length} rows from the old CSV file "${type}_matchNotFoundInMongoDB.csv"`])
+    //     // Read the existing CSV file
+    //     const existingData = await readAndParseCSV(oldDataFilePath)
+    //     // Filter out the rows that are in csvRowsToRemoveFromOldFile
+    //     const updatedData = existingData.filter(row => !csvRowsToRemoveFromOldFile.some(r => r["Email"].trim().toLowerCase() === row["Email"].trim().toLowerCase()))
+    //     // Write the updated data back to the CSV file
+    //     const header = Object.keys(updatedData[0] || {}).join(";")
+    //     const rows = updatedData.map(row => Object.values(row).join(";")).join("\n")
+    //     await fs.writeFile(oldDataFilePath, `${header}\n${rows}`, "utf-8")
+    // }
+
+    // END OF UNUSED PART
     
-
+    // We still want to update the csv file with the new rows that were not found in MongoDB. 
     // If there are rows that were not found in MongoDB, update the CSV file
     if (csvRowsForMatchNotFoundInMongoDB.length > 0) {
         await updateStudentCSVFile(csvRowsForMatchNotFoundInMongoDB, type)
