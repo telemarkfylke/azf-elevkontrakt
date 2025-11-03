@@ -1,3 +1,12 @@
+/**
+ * This Job checks billed contracts against xLedger to see if they have been payed, and if so. updates the DB
+ * Steps:
+ * 1. Query mongoDB for all contracts that have a løpenummer staring with "JOTN-" but not a status that is "Betalt" or "Utlån faktureres ikke"
+ * 2. Bundle up theese in chuncks of 100, and checks them against xledger API based on the 'løpenummer'
+ * 3. If Xledger status now is payed, we update our DB with correct status
+ */
+
+
 const { getDocuments, updateDocument } = require('../jobs/queryMongoDB.js');
 const { getSalesOrders } = require('./queryXLedger.js');
 
