@@ -39,7 +39,6 @@ async function fecthContractCandidatesFromMongoDB() {
   return await getDocuments(query, 'regular')
 }
 
-
 /**
  * 
  * @param {Object} rate 
@@ -55,7 +54,6 @@ function checkRateCandidacy(rate) {
 
   return false
 }
-
 
 /**
  * 
@@ -76,16 +74,15 @@ async function compareAndUpdateStatus(xLedgerRows, ratesDictionary) {
       const updateData = {
         fakturaInfo: {}
       }
-      updateData.fakturaInfo[dictionaryEntry.rateKey] = { status: 'Betalt' }
+      updateData.fakturaInfo[dictionaryEntry.rateKey] = { status: RateStatus.betalt }
 
       // Disabled så lenge vi er i prod verden
-      //await updateDocument(dictionaryEntry.contract._id, updateData, 'regular')
+      // await updateDocument(dictionaryEntry.contract._id, updateData, 'regular')
       updates++
     }
   })
   return updates
 }
-
 
 /**
  * 
@@ -127,7 +124,7 @@ const updatePaymentStatus = async () => {
       }
       if (hits != 1) {
         /*
-         Kommer vi hit er det antagelig noe feil med spørringen våre, eller datagrunnlaget.
+        Kommer vi hit er det antagelig noe feil med spørringen våre, eller datagrunnlaget.
         Da ligger det data der som faller mellom 2 stoler. Enten fordi flere av ratene er akutelle samtidig.
         Eller fordi vi henter noe fra databasen som koden ikke har tatt hensyn til.
         */

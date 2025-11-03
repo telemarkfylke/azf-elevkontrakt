@@ -1,7 +1,7 @@
 const { app } = require('@azure/functions');
 const { updatePaymentStatus } = require('../lib/jobs/updatePaymentStatus');
 
-// LEgger det som rute nå for test. bør være timetrigger i prod
+// Legger det som rute nå for test. bør være timetrigger i prod
 app.http('updatePaymentStatus', {
     methods: ['GET'],
     authLevel: 'anonymous',
