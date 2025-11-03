@@ -69,12 +69,10 @@ async function compareAndUpdateStatus(xLedgerRows, ratesDictionary) {
 
     // Fakturert, ikke betalt
     if (row.isPayed && (dictionaryEntry.rate.status !== RateStatus.betalt)) {
-
       //  Er det andre edgecases vi bør sjekke her ?   Kan det være statuser de har som ikke skal overskrives selv om den er betalt ?
-      const updateData = {
-        fakturaInfo: {}
-      }
-      updateData.fakturaInfo[dictionaryEntry.rateKey] = { status: RateStatus.betalt }
+
+      const updateData = {}
+      updateData['fakturaInfo.' + dictionaryEntry.rateKey + '.status'] = RateStatus.betalt
 
       // Disabled så lenge vi er i prod verden
       // await updateDocument(dictionaryEntry.contract._id, updateData, 'regular')
