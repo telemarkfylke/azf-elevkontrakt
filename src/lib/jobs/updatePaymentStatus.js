@@ -27,7 +27,7 @@ const RateStatus = {
 function addQueryRate(rateName) {
   const array = [{}, {}]
   array[0]["fakturaInfo." + rateName + ".løpenummer"] = { '$not': { '$in': [RateStatus.ukjent, null] } }
-  array[1]["fakturaInfo." + rateName + ".status"] = { '$not': { '$in': [RateStatus.betalt, RateStatus.utlaan, RateStatus.inkasso] } }
+  array[1]["fakturaInfo." + rateName + ".status"] = { '$not': { '$in': [RateStatus.betalt, RateStatus.utlaan] } }
   return {
     '$and': array
   }
@@ -58,7 +58,7 @@ function checkRateCandidacy(rate) {
   if (!rate.løpenummer)
     return false
 
-  if (rate.løpenummer.substring(0, 4) === 'JOT-' && (rate.status === RateStatus.fakturert || rate.status === RateStatus.ukjent))
+  if (rate.løpenummer.substring(0, 4) === 'JOT-' && (rate.status === RateStatus.fakturert || rate.status === RateStatus.ukjent || rate.status === RateStatus.inkasso))
     return true
 
   return false
@@ -129,11 +129,10 @@ const updatePaymentStatus = async () => {
           ratesDictionary[rate.løpenummer] = { rate: rate, contract: contract, rateKey: key }
         }
       }
-      if (hits != 1) {
+      if (hits < 1) {
         /*
         Kommer vi hit er det antagelig noe feil med spørringen våre, eller datagrunnlaget.
-        Da ligger det data der som faller mellom 2 stoler. Enten fordi flere av ratene er akutelle samtidig.
-        Eller fordi vi henter noe fra databasen som koden ikke har tatt hensyn til.
+        Da ligger det data der som faller mellom 2 stoler fordi vi henter noe fra databasen som koden ikke har tatt hensyn til.
         */
         console.log(JSON.stringify(contract))
       }
