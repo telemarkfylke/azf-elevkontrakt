@@ -16,7 +16,8 @@ const RateStatus = {
   betalt: 'Betalt',
   inkasso: 'Overført inkasso',
   ukjent: 'Ukjent',
-  fakturert: 'Fakturert'
+  fakturert: 'Fakturert',
+  ikkeBetale: 'Skal ikke betale'
 }
 
 /**
@@ -25,9 +26,10 @@ const RateStatus = {
  * @returns {Object}
  */
 function addQueryRate(rateName) {
-  const array = [{}, {}]
+  const array = [{}, {}, {}]
   array[0]["fakturaInfo." + rateName + ".løpenummer"] = { '$not': { '$in': [RateStatus.ukjent, null] } }
-  array[1]["fakturaInfo." + rateName + ".status"] = { '$not': { '$in': [RateStatus.betalt, RateStatus.utlaan] } }
+  array[1]["fakturaInfo." + rateName + ".status"] = { '$not': { '$in': [RateStatus.betalt, RateStatus.utlaan, RateStatus.ikkeBetale] } }
+  array[2]["fakturaInfo." + rateName + ".faktureringsDato"] = { '$gt': "2025-10-01T00:00:00.000Z" }
   return {
     '$and': array
   }
@@ -113,15 +115,18 @@ async function checkBatchesInXledger(ratesToCheck, ratesDictionary) {
 
 // For å se om denne raten er en kandidat for å sjekke opp imot xledger
 const updatePaymentStatus = async () => {
+
+
   try {
     const documents = await fecthContractCandidatesFromMongoDB()
-
     const ratesToCheck = []
     const ratesDictionary = {}
 
+    let multihits = 0;
+    let noHits = 0;
+
     documents.result.forEach(contract => {
       let hits = 0;
-
       for (const [key, rate] of Object.entries(contract.fakturaInfo)) {
         if (checkRateCandidacy(rate)) {
           hits++
@@ -130,11 +135,15 @@ const updatePaymentStatus = async () => {
         }
       }
       if (hits < 1) {
+        noHits++
         /*
-        Kommer vi hit er det antagelig noe feil med spørringen våre, eller datagrunnlaget.
-        Da ligger det data der som faller mellom 2 stoler fordi vi henter noe fra databasen som koden ikke har tatt hensyn til.
+          Her dukker typisk ting som har løpenummer av gammel type (Digitroll) opp. 
+          De kommer i databasespørringen, men har løpenummer som ikke starter med "JOT-"
         */
-        console.log(JSON.stringify(contract))
+        //console.log(JSON.stringify(contract))
+      } else if (hits > 1) {
+        multihits++;
+        //console.log(JSON.stringify(contract))
       }
     });
 
