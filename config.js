@@ -6,6 +6,9 @@ module.exports = {
         scope: process.env.AZURE_SCOPE,
         grantType: process.env.AZURE_GRANT_TYPE || 'client_credentials',
     },
+    xledger: {
+        url: process.env.XLEDGER_URL,
+    },
     fint: {
         url: process.env.FINT_URL,
         scope: process.env.FINT_SCOPE,
