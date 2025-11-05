@@ -210,7 +210,7 @@ const getDocuments = async (query, documentType) => {
     } else if (documentType === 'preimport') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).find(query).toArray()
     } else if (documentType === 'løpenummer') {
-        result = await mongoClient.db(mongoDB.dbnameXledgerSerialNumbers).collection(`${mongoDB.serialnumberCollection}`).find(query).sort({ 'iterationNumber': -1 }).toArray()
+        result = await mongoClient.db(mongoDB.dbnameXledgerSerialNumbers).collection(`${mongoDB.serialnumberCollection}`).find(query).sort({ 'iterationNumber': -1 }).limit(1).toArray()
     } else if (documentType === 'settings') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).find(query).toArray()
     } else if (documentType === 'regular') {
