@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { xledger } = require('../../../config');
 const { logger } = require('@vtfk/logger');
+const logPrefix = 'queryXledger'
 
 const queryXledger = async (request) => {
 
@@ -16,7 +17,7 @@ const queryXledger = async (request) => {
     try {
         return await axios.request(xledgerRequest)
     } catch (error) {
-        console.log(JSON.stringify(error))
+        logger('error', [logPrefix, 'Error fetching data from xledger api', error])
     }
 }
 
@@ -45,7 +46,7 @@ const getSalesOrders = async (extOrderNumbers) => {
         }
         return rows
     } catch (error) {
-        console.log(JSON.stringify(error))
+        logger('error', [logPrefix, 'Error fetching salesorders', error])
     }
 }
 

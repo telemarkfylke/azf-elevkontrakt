@@ -9,19 +9,24 @@
 
 const { getDocuments, updateDocument } = require('../jobs/queryMongoDB.js');
 const { getSalesOrders } = require('./queryXLedger.js');
+const { logger } = require('@vtfk/logger');
+const logPrefix = 'updatePaymentStatus'
 
 // Primitiv enum substitutt
-const RateStatus = {
+const RateStatus = Object.freeze({
   utlaan: 'Utlån faktureres ikke',
   betalt: 'Betalt',
   inkasso: 'Overført inkasso',
   ukjent: 'Ukjent',
   fakturert: 'Fakturert',
   ikkeBetale: 'Skal ikke betale',
-  kreditert: 'Kreditert',
+  kreditert: 'Kreditert'
+})
 
-  ufakturert: 'Ikke fakturert'
-}
+const ExtendedSummaryStatus = Object.freeze({
+  ufakturert: 'Ikke fakturert',
+  gamleRates: 'Gamle løpenummer',
+})
 
 /**
  * 
@@ -69,6 +74,21 @@ function checkRateCandidacy(rate) {
   return false
 }
 
+
+/**
+ * 
+ * @param {string} key 
+ * @param {Object} summary  
+ */
+function addToSummary(key, summary) {
+  if (!summary[key]) {
+    summary[key] = 0
+  }
+  summary[key]++
+}
+
+
+
 /**
  * 
  * @param {Object} dictionaryEntry 
@@ -78,7 +98,7 @@ async function compareAndUpdateStatus(dictionaryEntry) {
 
   if (dictionaryEntry.salesOrders.length === 0) {
     // Her ligger det løpenummer i Jotne uten matchende salgsordrer, importfil er generert, men ikke importert
-    return RateStatus.ufakturert
+    return ExtendedSummaryStatus.ufakturert
   }
 
   let invoiceAmountSum = 0;
@@ -121,7 +141,7 @@ async function updateMongo(documentId, rateKey, status) {
  * @param {Object} ratesDictionary 
  * @returns {number}
  */
-async function updateDictionaryWithResponse(xLedgerRows, ratesDictionary, statistics) {
+async function updateDictionaryWithResponse(xLedgerRows, ratesDictionary, summary) {
   let updates = 0;
 
   // Sørge for å samle alle salgsordrer på samme extInvoceNr sammen, slik at vi kan tolke dem
@@ -130,16 +150,10 @@ async function updateDictionaryWithResponse(xLedgerRows, ratesDictionary, statis
     dictionaryEntry.salesOrders.push(row)
   })
 
-  // Nå som de er samlet, kan vi vurder internt på et nummer om det er betalt elelr kreditert o.s.v.
+  // Nå som de er samlet, kan vi vurder internt på et nummer om det er betalt eller kreditert o.s.v.
   for (const dictionaryEntry of Object.values(ratesDictionary)) {
     const status = (await compareAndUpdateStatus(dictionaryEntry))
-
-    if (!statistics[status]) {
-      statistics[status] = 0
-    }
-    statistics[status]++
-
-
+    addToSummary(status, summary)
   }
 
   return updates
@@ -154,7 +168,9 @@ const updatePaymentStatus = async () => {
     const targetChunckSize = 400;
     let ratesToCheck = []
     let ratesDictionary = {}
-    const statistics = {}
+    const summary = {
+      'Totalt antall i database': documents.result.length,
+    }
 
     for (let index = 0; index < documents.result.length; index++) {
       const contract = documents.result[index];
@@ -167,6 +183,7 @@ const updatePaymentStatus = async () => {
         }
       }
       if (hits < 1) {
+        addToSummary(ExtendedSummaryStatus.gamleRates, summary)
         /* Her dukker typisk ting som har løpenummer av gammel type (Digitroll) opp. De kommer i databasespørringen, men har løpenummer som ikke starter med "JOT-" */
         noHits++
       } else if (hits > 1) {
@@ -176,7 +193,7 @@ const updatePaymentStatus = async () => {
       // Handle a chunk of invoices
       if (ratesToCheck.length >= targetChunckSize) {
         const xledgerRows = await getSalesOrders(ratesToCheck)
-        await updateDictionaryWithResponse(xledgerRows, ratesDictionary, statistics)
+        await updateDictionaryWithResponse(xledgerRows, ratesDictionary, summary)
         ratesToCheck = []
         ratesDictionary = {}
       }
@@ -184,14 +201,14 @@ const updatePaymentStatus = async () => {
 
     // We need to handle the leftover items to...
     const xledgerRows = await getSalesOrders(ratesToCheck)
-    await updateDictionaryWithResponse(xledgerRows, ratesDictionary, statistics)
+    await updateDictionaryWithResponse(xledgerRows, ratesDictionary, summary)
 
 
     // const updatedRows = await checkBatchesInXledger(ratesToCheck, ratesDictionary)
-    return { rowsUpdated: updatedRows }
+    return summary
   }
   catch (error) {
-    console.log(error)
+    logger('error', [logPrefix, 'Error updating paymentStatus', error])
   }
 }
 
