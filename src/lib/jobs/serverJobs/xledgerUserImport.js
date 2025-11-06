@@ -5,6 +5,10 @@ const { getDocuments, updateDocument } = require('../queryMongoDB.js')
 const { logger } = require('@vtfk/logger')
 const fs = require('fs')
 const path = require('path')
+const { fileImport } = require('../queryXledger.js')
+const { default: axios } = require('axios')
+const { teams, email } = require('../../../../config.js')
+const { sendEmail } = require('../postEmail.js')
 
 /**
  * This job is responsible for creating a CSV file for importing users into Xledger.
@@ -147,6 +151,81 @@ const createCsvString = async (csvData) => {
 }
 
 /**
+ * 
+ * @param {Object} message | { updateCount, notFoundCount, updateCountOldFile, notFoundCountOldFile }
+ * @param {string} type | 'utlevering' | 'innlevering'
+ */
+const sendTeamsMessage = async (message) => {
+    const loggerPrefix = "sendTeamsMessage"
+    const { csvDataArray, csvDataArrayForManualReview, documentsThatFailed } = message
+    logger('info', [loggerPrefix, `Preparing to send Teams message with import status`])
+    const teamsMsg = {
+            type: 'message',
+            attachments: [
+                {
+                    contentType: 'application/vnd.microsoft.card.adaptive',
+                    contentUrl: null,
+                    content: {
+                        $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+                        type: 'AdaptiveCard',
+                        version: '1.5',
+                        msteams: { width: 'full' },
+                        body: [
+                            {
+                                type: 'TextBlock',
+                                text: `Statusrapport - azf-elevkontrakt - Import av brukere til Xledger (SL04-SYS)`,
+                                wrap: true,
+                                style: 'heading',
+                            },
+                            {
+                                type: 'TextBlock',
+                                text: `**${csvDataArray.length}** bruker(er) importert til Xledger`,
+                                wrap: true,
+                                weight: 'Bolder',
+                                size: 'Medium'
+                            },
+                            {
+                                type: 'TextBlock',
+                                text: `**${csvDataArrayForManualReview.length}** bruker(er) krever manuell gjennomgang før import, disse blir med ved neste kjøring om de er oppdatert`,
+                                wrap: true,
+                                weight: 'Bolder',
+                                size: 'Medium'
+                            },
+                            {
+                                type: 'TextBlock',
+                                text: `**${documentsThatFailed.length}** bruker(er) feilet under import, ta en sjekk på disse i databasen`,
+                                wrap: true,
+                                weight: 'Bolder',
+                                size: 'Medium'
+                            },
+                            {
+                                type: 'TextBlock',
+                                text: `**${documentsThatFailed}** Bruker(er) som feilet under import`,
+                                wrap: true,
+                                weight: 'Bolder',
+                                size: 'Medium'
+                            },
+                            {
+                                type: 'FactSet',
+                                facts: []
+                            },
+                            {
+                                type: 'Image',
+                                url: 'https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3aTJ4cm5qbTh5cDkxdmdmaHpraWNkNnB6NG94bnJwZWJkODBuZzAzNiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/o0FR9GaP3fwcePONCT/giphy.gif',
+                                horizontalAlignment: 'Center'
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    const headers = { contentType: 'application/vnd.microsoft.teams.card.o365connector' }
+    const postStatus = await axios.post(teams.webhook, teamsMsg, { headers })
+    logger('info', [loggerPrefix, `Teams message sent with status`])
+    return postStatus
+}
+
+/**
  * Create a new array with only the necessary fields for the CSV export.
  * @returns {Promise<Array>} - A new array containing only the necessary fields.
  */
@@ -215,16 +294,60 @@ const createCsvString = async (csvData) => {
     }
     // Create a csv file from the csvDataArray
     const csvString = await createCsvString(csvDataArray)
-    const filePath = `./src/data/xledger_files/user_import_files/SL04-SYS_xledger_user_import_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
+    const fileNameForImport = `SL04-SYS_xledger_user_import_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
+    const filePath = `./src/data/xledger_files/user_import_files/${fileNameForImport}`
+
     fs.writeFileSync(filePath, csvString, 'utf8')
     logger('info', [logPrefix, `CSV file created at ${filePath}`])
 
+    // Import the file to Xledger
+    try {
+        const importResult = await fileImport('SL04-SYS', filePath, fileNameForImport)
+        logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
+    } catch (error) {
+        logger('error', [logPrefix, `Error importing file to Xledger`, error])
+    }
+
+    // After importing, move the file to the finished folder
+    const finishedFilePath = `./src/data/xledger_files/user_import_files/finished/${fileNameForImport}`
+    fs.renameSync(filePath, finishedFilePath)
+    logger('info', [logPrefix, `CSV file moved to finished folder at ${finishedFilePath}`])
+
     // Create a csv file from the csvDataArrayForManualReview if there are any documents that need manual review
     if (csvDataArrayForManualReview.length > 0) {
+        const fileNameForManualReview = `SL04-SYS_xledger_user_import_manual_review_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
         const csvStringForManualReview = await createCsvString(csvDataArrayForManualReview)
-        const filePathForManualReview = `./src/data/xledger_files/user_import_files/SL04-SYS_xledger_user_import_MANUAL_REVIEW_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
+        const filePathForManualReview = `./src/data/xledger_files/user_import_files/${fileNameForManualReview}`
         fs.writeFileSync(filePathForManualReview, csvStringForManualReview, 'utf8')
         logger('info', [logPrefix, `CSV file for manual review created at ${filePathForManualReview}`])
+
+        // Send mail to the responsible person about the manual review file
+        try {
+            const subject = 'Ansvarlige til manuell gjennomgang'
+            const html = "Hei! <br><br>Vedlagt finner du en liste over ansvarlige som av en eller annen grunn ikke kan faktureres, navnet finner du i 'Description'-feltet. <br>Den ansvarlige kan være en elev, foresatt eller en annen ansvarlig person.<br>I JOTNE kan du søke opp den ansvarlige og finne hvilke elev det gjelder og annen relevant informasjon.<br><br>Den ansvarlige må manuelt endres i databasen, ta kontakt med system ansvarlig når du har funnet nye ansvarlige.<br><br>Mvh. JOTNE"
+
+            function toBase64(filePath) {
+                const fileBuffer = fs.readFileSync(filePath)
+                return fileBuffer.toString('base64')
+            }
+
+            const attachments = [
+                {
+                    name: fileNameForManualReview,
+                    data: toBase64(filePathForManualReview),
+                    type: 'text/csv'
+                }
+            ]
+            await sendEmail(email.to, email.from, subject, html, attachments)
+            logger('info', [logPrefix, `Email sent about manual review file at ${filePathForManualReview}`])
+        } catch (error) {
+            logger('error', [logPrefix, `Error sending mail about manual review file at ${filePathForManualReview}`, error])
+        }
+
+        // After mailing, move the file to the finished folder
+        const finishedFilePathForManualReview = `./src/data/xledger_files/user_import_files/finished/${fileNameForManualReview}`
+        fs.renameSync(filePathForManualReview, finishedFilePathForManualReview)
+        logger('info', [logPrefix, `CSV file for manual review moved to finished folder at ${finishedFilePathForManualReview}`])
     }
    
     // Write back to the database that the documents have been imported to Xledger
@@ -237,6 +360,7 @@ const createCsvString = async (csvData) => {
         }
     }
     
+    await sendTeamsMessage({csvDataArray, csvDataArrayForManualReview, documentsThatFailed})
     // return csvString
     return {csvDataArray, csvDataArrayForManualReview, documentsThatFailed}
 }
