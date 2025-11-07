@@ -1,3 +1,8 @@
+const { logger } = require('@vtfk/logger')
+const { email } = require('../../../config.js')
+const { default: axios } = require('axios')
+require('dotenv').config()
+
 /**
  * 
  * @param {Array<String>} to | Array of email addresses | The recipients of the email e.g. ['recipient@example.com', 'recipient2@example.com']
@@ -7,11 +12,7 @@
  * @param {Array<Object>} attachments | Array of attachments | Each attachment should be an object with 'name', 'data', and 'type' properties e.g. [{ name: 'file.csv', data: 'base64encodeddata', type: 'text/csv' }]
  * @returns 
  */
-
 const sendEmail = async (to, from, subject, html, attachments) => {
-    const { email } = require('../../../config.js')
-    const { default: axios } = require('axios')
-
     // Type check
     if(to && !Array.isArray(to)) {
         throw new Error('Parameter "to" must be an array')
@@ -53,7 +54,7 @@ const sendEmail = async (to, from, subject, html, attachments) => {
         })
         return response.data
     } catch (error) {
-        console.error('Error sending email:', error)
+        logger('error', 'Error sending email', error)
         throw error
     }
 }
