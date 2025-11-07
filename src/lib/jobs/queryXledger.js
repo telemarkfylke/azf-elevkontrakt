@@ -50,7 +50,25 @@ const getSalesOrders = async (extOrderNumbers) => {
     }
 }
 
+const getOrderStatuses = async (extOrderNumbers) => {
+    const request = {
+        method: 'POST',
+        path: '/search/orderstatus',
+        body: {
+            extOrderNumbers: extOrderNumbers
+        }
+    }
+
+    try {
+        let res = await queryXledger(request)
+        return res.data.rows
+    } catch (error) {
+        logger('error', [logPrefix, 'Error fetching orderStatus', error])
+    }
+}
+
 
 module.exports = {
-    getSalesOrders
+    getSalesOrders,
+    getOrderStatuses
 }
