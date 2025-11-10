@@ -81,7 +81,7 @@ const fileImport = async (fileType, pathToFileForImport, fileName) => {
         const result = await queryXledger(request, fileName)
         return result.data
     } catch (error) {
-        console.log(JSON.stringify(error))
+         logger('error', [logPrefix, `Error importing file: ${fileName}`, error])
     }
 }
 
