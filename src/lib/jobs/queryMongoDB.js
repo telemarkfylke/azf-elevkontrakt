@@ -250,16 +250,16 @@ const updateContractPCStatus = async (contract, isMock) => {
     }
 
     // Check if releasePC or returnPC is provided
-    if(!contract.releasePC && !contract.returnPC) {
-        logger('error', [logPrefix, 'Mangler releasePC eller returnPC'])
-        return {status: 400, error: 'Mangler releasePC eller returnPC'}
+    if(!contract.releasePC && !contract.returnPC && !contract.buyOutPC) {
+        logger('error', [logPrefix, 'Mangler releasePC eller returnPC eller buyOutPC'])
+        return {status: 400, error: 'Mangler releasePC eller returnPC eller buyOutPC'}
     }
 
     // If releasePC or returnPC is provided, provide the correct info
     if(contract.releasePC === true) {
         logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, releasePC: ${contract.releasePC}`])
         const releasePCInfo = {
-            'pcInfo.releaseBy': "innlogget bruker - redigert av administrator",
+            'pcInfo.releaseBy': contract.upn,
             'pcInfo.releasedDate': new Date(),
             'pcInfo.released': "true"
         }
@@ -267,14 +267,22 @@ const updateContractPCStatus = async (contract, isMock) => {
     } else if (contract.returnPC === true) {
         logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, returnPC: ${contract.returnPC}`])
         const returnPCInfo = {
-            'pcInfo.returnedBy': "innlogget bruker - redigert av administrator",
+            'pcInfo.returnedBy': contract.upn,
             'pcInfo.returnedDate': new Date(),
             'pcInfo.returned': "true"
         }
         pcUpdateObject = returnPCInfo
+    } else if (contract.buyOutPC === true) {
+        logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, buyOutPC: ${contract.buyOutPC}`])
+        const buyOutPCInfo = {
+            'pcInfo.buyOutBy': contract.upn,
+            'pcInfo.buyOutDate': new Date(),
+            'pcInfo.boughtOut': "true"
+        }
+        pcUpdateObject = buyOutPCInfo
     } else {
-        logger('error', [logPrefix, 'Mangler releasePC eller returnPC'])
-        return {status: 400, error: 'Mangler releasePC eller returnPC'}
+        logger('error', [logPrefix, 'Mangler releasePC eller returnPC eller buyOutPC'])
+        return {status: 400, error: 'Mangler releasePC eller returnPC eller buyOutPC'}
     }
 
     let result 
