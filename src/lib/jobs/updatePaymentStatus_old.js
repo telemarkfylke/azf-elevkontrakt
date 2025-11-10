@@ -8,7 +8,7 @@
 
 
 const { getDocuments, updateDocument } = require('./queryMongoDB.js');
-const { getSalesOrders, getOrderStatuses } = require('./queryXLedger.js');
+const { getSalesOrders } = require('./queryXLedger.js');
 const { logger } = require('@vtfk/logger');
 const logPrefix = 'updatePaymentStatus'
 
@@ -88,6 +88,44 @@ function addToSummary(key, summary) {
 }
 
 
+
+/**
+ * 
+ * @param {Object} dictionaryEntry 
+ * @returns {number}
+ */
+async function compareAndUpdateStatus(dictionaryEntry) {
+
+  if (dictionaryEntry.salesOrders.length === 0) {
+    // Her ligger det løpenummer i Jotne uten matchende salgsordrer, importfil er generert, men ikke importert
+    return ExtendedSummaryStatus.ufakturert
+  }
+
+  let invoiceAmountSum = 0;
+  let remainingAmountSum = 0;
+  for (let i = 0; i < dictionaryEntry.salesOrders.length; i++) {
+    invoiceAmountSum += dictionaryEntry.salesOrders[i].invoiceAmount
+    remainingAmountSum += dictionaryEntry.salesOrders[i].remainingAmount
+  }
+
+  if (invoiceAmountSum <= 0) {
+    // Kreditert  
+    await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, RateStatus.kreditert)
+    return RateStatus.kreditert
+  }
+  else if (remainingAmountSum == 0) {
+    // Betalt
+    await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, RateStatus.betalt)
+    return RateStatus.betalt
+  }
+  else if (remainingAmountSum > 0) {
+    // Ikke betalt
+    return RateStatus.fakturert
+  }
+
+  return RateStatus.ukjent
+}
+
 async function updateMongo(documentId, rateKey, status) {
   const updateData = {}
   updateData['fakturaInfo.' + rateKey + '.status'] = status
@@ -101,35 +139,40 @@ async function updateMongo(documentId, rateKey, status) {
  * 
  * @param {Array} xLedgerRows 
  * @param {Object} ratesDictionary 
- * @param {Object} summary
  * @returns {number}
  */
 async function updateDictionaryWithResponse(xLedgerRows, ratesDictionary, summary) {
+  let updates = 0;
+
+  // Sørge for å samle alle salgsordrer på samme extInvoceNr sammen, slik at vi kan tolke dem
   xLedgerRows.forEach(async (row) => {
     const dictionaryEntry = ratesDictionary[row.extOrderNumber]
     dictionaryEntry.salesOrders.push(row)
-    if (row.status === RateStatus.betalt || row.status === RateStatus.kreditert) {
-      await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, row.status)
-    }
-
-    addToSummary(row.status, summary)
   })
+
+  // Nå som de er samlet, kan vi vurder internt på et nummer om det er betalt eller kreditert o.s.v.
+  for (const dictionaryEntry of Object.values(ratesDictionary)) {
+    const status = (await compareAndUpdateStatus(dictionaryEntry))
+    addToSummary(status, summary)
+  }
+
+  return updates
 }
 
 // For å se om denne raten er en kandidat for å sjekke opp imot xledger
-const updatePaymentStatus = async () => {
+const updatePaymentStatus_Old = async () => {
   try {
     const documents = await fecthContractCandidatesFromMongoDB()
+    let multihits = 0;
+    let noHits = 0;
     const targetChunckSize = 400;
     let ratesToCheck = []
     let ratesDictionary = {}
     const summary = {
       'Totalt antall i database': documents.result.length,
-      multiRateHits: 0
     }
 
     for (let index = 0; index < documents.result.length; index++) {
-      const lastIndex = documents.result.length - 1;
       const contract = documents.result[index];
       let hits = 0;
       for (const [key, rate] of Object.entries(contract.fakturaInfo)) {
@@ -140,25 +183,28 @@ const updatePaymentStatus = async () => {
         }
       }
       if (hits < 1) {
-        /* Her dukker typisk ting som har løpenummer av gammel type (Digitroll) opp. De kommer i databasespørringen, men har løpenummer som ikke starter med "JOT-" */
         addToSummary(ExtendedSummaryStatus.gamleRates, summary)
+        /* Her dukker typisk ting som har løpenummer av gammel type (Digitroll) opp. De kommer i databasespørringen, men har løpenummer som ikke starter med "JOT-" */
+        noHits++
       } else if (hits > 1) {
-        summary.multiRateHits++;
+        multihits++;
       }
 
       // Handle a chunk of invoices
-      if (ratesToCheck.length >= targetChunckSize || index === lastIndex) {
-        const orderStatusRows = await getOrderStatuses(ratesToCheck)
-        await updateDictionaryWithResponse(orderStatusRows, ratesDictionary, summary)
+      if (ratesToCheck.length >= targetChunckSize) {
+        const xledgerRows = await getSalesOrders(ratesToCheck)
+        await updateDictionaryWithResponse(xledgerRows, ratesDictionary, summary)
         ratesToCheck = []
         ratesDictionary = {}
       }
     }
-/*
+
     // We need to handle the leftover items to...
-    const xledgerRows = await getOrderStatuses(ratesToCheck)
+    const xledgerRows = await getSalesOrders(ratesToCheck)
     await updateDictionaryWithResponse(xledgerRows, ratesDictionary, summary)
-*/
+
+
+    // const updatedRows = await checkBatchesInXledger(ratesToCheck, ratesDictionary)
     return summary
   }
   catch (error) {
@@ -167,5 +213,5 @@ const updatePaymentStatus = async () => {
 }
 
 module.exports = {
-  updatePaymentStatus,
+  updatePaymentStatus_Old: updatePaymentStatus_Old,
 }

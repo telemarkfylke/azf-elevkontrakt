@@ -95,7 +95,7 @@ app.http('handleDbRequest', {
                         }
                     }
                 } else if(request.method === 'PUT') {
-                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.skoleadministrator-write'])) {
+                    if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.skoleadministrator-write', 'elevkontrakt.readwrite'])) {
                         logger('error', [`${logPrefix} - PUT`, 'Unauthorized access attempt', authorizationHeader])
                         return { status: 403, body: 'Forbidden' }
                     } else {

@@ -2,6 +2,7 @@ const axios = require('axios');
 const fs = require('fs');
 const { xledger } = require('../../../config');
 const { logger } = require('@vtfk/logger');
+const logPrefix = 'queryXledger'
 
 
 const queryXledger = async (request, fileName) => {
@@ -27,7 +28,7 @@ const queryXledger = async (request, fileName) => {
     try {
         return await axios.request(xledgerRequest)
     } catch (error) {
-        console.log(JSON.stringify(error))
+        logger('error', [logPrefix, 'Error fetching data from xledger api', error])
     }
 }
 
@@ -56,7 +57,24 @@ const getSalesOrders = async (extOrderNumbers) => {
         }
         return rows
     } catch (error) {
-        console.log(JSON.stringify(error))
+        logger('error', [logPrefix, 'Error fetching salesorders', error])
+    }
+}
+
+const getOrderStatuses = async (extOrderNumbers) => {
+    const request = {
+        method: 'POST',
+        path: '/search/orderstatus',
+        body: {
+            extOrderNumbers: extOrderNumbers
+        }
+    }
+
+    try {
+        let res = await queryXledger(request)
+        return res.data.rows
+    } catch (error) {
+        logger('error', [logPrefix, 'Error fetching orderStatus', error])
     }
 }
 /**
@@ -89,4 +107,5 @@ const fileImport = async (fileType, pathToFileForImport, fileName) => {
 module.exports = {
     getSalesOrders,
     fileImport
+    getOrderStatuses
 }
