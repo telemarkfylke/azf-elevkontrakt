@@ -106,6 +106,6 @@ const fileImport = async (fileType, pathToFileForImport, fileName) => {
 
 module.exports = {
     getSalesOrders,
-    fileImport
+    fileImport,
     getOrderStatuses
 }
