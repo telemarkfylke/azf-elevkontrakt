@@ -101,6 +101,9 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
             returned: "false",
             returnedRegisteredBy: "Ukjent",
             returnedDate: "Ukjent",
+            boughtOut: "false",
+            buyOutBy: "Ukjent",
+            buyOutDate: "Ukjent",
         },
         error: error || [],
     }
