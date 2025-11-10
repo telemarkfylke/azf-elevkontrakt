@@ -51,5 +51,11 @@ module.exports = {
     },
     teams: {
         webhook: process.env.TEAMS_WEBHOOK_URL,
+    }, 
+    email: {
+        from: process.env.EMAIL_FROM,
+        to: process.env.EMAIL_TO ? process.env.EMAIL_TO.split(',') : [],
+        xFunctionsKey: process.env.EMAIL_API_KEY,
+        url: process.env.EMAIL_API_URL,
     }
 }
