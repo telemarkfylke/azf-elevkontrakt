@@ -228,7 +228,12 @@ const getDocuments = async (query, documentType) => {
         return {status: 200, result}
     }
 }
-
+/**
+ * 
+ * @param {String} contract | contract object from frontend
+ * @param {Boolean} isMock | true | false
+ * @returns 
+ */
 const updateContractPCStatus = async (contract, isMock) => {
     // Fields to update:
     // pcInfo.releasedBy: "innlogget bruker - redigert av administrator"
@@ -256,28 +261,28 @@ const updateContractPCStatus = async (contract, isMock) => {
     }
 
     // If releasePC or returnPC is provided, provide the correct info
-    if(contract.releasePC === true) {
+    if(contract.releasePC === "true" || contract.releasePC === "false") {
         logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, releasePC: ${contract.releasePC}`])
         const releasePCInfo = {
             'pcInfo.releaseBy': contract.upn,
             'pcInfo.releasedDate': new Date(),
-            'pcInfo.released': "true"
+            'pcInfo.released': contract.releasePC
         }
         pcUpdateObject = releasePCInfo
-    } else if (contract.returnPC === true) {
+    } else if (contract.returnPC === "true" || contract.returnPC === "false") {
         logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, returnPC: ${contract.returnPC}`])
         const returnPCInfo = {
             'pcInfo.returnedBy': contract.upn,
             'pcInfo.returnedDate': new Date(),
-            'pcInfo.returned': "true"
+            'pcInfo.returned': contract.returnPC
         }
         pcUpdateObject = returnPCInfo
-    } else if (contract.buyOutPC === true) {
+    } else if (contract.buyOutPC === "true" || contract.buyOutPC === "false") {
         logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, buyOutPC: ${contract.buyOutPC}`])
         const buyOutPCInfo = {
             'pcInfo.buyOutBy': contract.upn,
             'pcInfo.buyOutDate': new Date(),
-            'pcInfo.boughtOut': "true"
+            'pcInfo.boughtOut': contract.buyOutPC
         }
         pcUpdateObject = buyOutPCInfo
     } else {

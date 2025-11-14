@@ -99,12 +99,19 @@ app.http('handleDbRequest', {
                         logger('error', [`${logPrefix} - PUT`, 'Unauthorized access attempt', authorizationHeader])
                         return { status: 403, body: 'Forbidden' }
                     } else {
-                        if(jsonBody.contractID && (jsonBody.releasePC === true || jsonBody.returnPC === true)) {
-                            //Handle return or release of pc 
+                        if(jsonBody.contractID && (jsonBody.releasePC === "true" || jsonBody.returnPC === "true" || jsonBody.buyOutPC === "true" || jsonBody.releasePC === "false" || jsonBody.returnPC === "false" || jsonBody.buyOutPC === "false")) {
+                            //Handle return or release of pc
+                            let logMsg = ''
+                            if(jsonBody.releasePC === "true" || jsonBody.returnPC === "true" || jsonBody.buyOutPC === "true") {
+                                logMsg = `PC tilhørende kontrakt med _id: ${jsonBody.contractID} blir ${jsonBody.releasePC === "true" ? 'utlevert' : jsonBody.returnPC === "true" ? 'innlevert' : 'kjøpt ut'}`
+                            }
+                            else if (jsonBody.releasePC === "false" || jsonBody.returnPC === "false" || jsonBody.buyOutPC === "false") {
+                                logMsg = `PC tilhørende kontrakt med _id: ${jsonBody.contractID} er ${jsonBody.releasePC === "false" ? 'satt tilbake til ikke utlevert' : jsonBody.returnPC === "false" ? 'satt tilebake til ikke innlevert' : 'satt tilbake til ikke kjøpt ut'}`
+                            }
                             try {
-                                logger('info', [logPrefix, `PC tilhørende kontrakt med _id: ${jsonBody.contractID} blir ${jsonBody.releasePC ? 'utlevert' : 'innlevert'}`])
+                                logger('info', [logPrefix, logMsg])
                                 const result = await updateContractPCStatus(jsonBody, isMock)
-                                logger('info', [logPrefix, `PC tilhørende kontrakt med _id: ${jsonBody.contractID} er ${jsonBody.releasePC ? 'utlevert' : 'innlevert'}`])
+                                logger('info', [logPrefix, `Oppdaterte PC status for kontrakt _id: ${jsonBody.contractID}`])
                                 return { status: 200, jsonBody: result }
                             } catch (error) {
                                 logger('error', [logPrefix, `Error ved innlevering eller utlevering av PC, kontrakt _id: ${jsonBody.contractID}`, error])
