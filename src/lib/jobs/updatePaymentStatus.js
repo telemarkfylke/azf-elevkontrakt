@@ -8,7 +8,7 @@
 
 
 const { getDocuments, updateDocument } = require('./queryMongoDB.js');
-const { getSalesOrders, getOrderStatuses } = require('./queryXLedger.js');
+const { getSalesOrders, getOrderStatuses } = require('./queryXledger.js');
 const { logger } = require('@vtfk/logger');
 const logPrefix = 'updatePaymentStatus'
 

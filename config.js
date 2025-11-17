@@ -8,6 +8,7 @@ module.exports = {
     },
     xledger: {
         url: process.env.XLEDGER_URL,
+        scope: process.env.XLEDGER_SCOPE,
     },
     fint: {
         url: process.env.FINT_URL,

@@ -2,19 +2,22 @@ const axios = require('axios');
 const fs = require('fs');
 const { xledger } = require('../../../config');
 const { logger } = require('@vtfk/logger');
+const getAccessToken = require('../auth/get-endtraid-token');
 const logPrefix = 'queryXledger'
-
 
 const queryXledger = async (request, fileName) => {
     let headers = {}
+    const accessToken = await getAccessToken(xledger.scope)
     if(fileName) {
         headers = {
             filename: fileName,
-            'Content-Type': 'application/octet-stream'
+            'Content-Type': 'application/octet-stream',
+            Authorization: `Bearer ${accessToken}`
         }
     } else {
         headers = {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`
         }
     }
 
