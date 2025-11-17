@@ -21,10 +21,9 @@ app.http('updatePaymentStatus', {
 
 
 // Bør være timetrigger i prod
-/*
 app.timer('updatePaymentStatus', {
-    // Once every day at 06:00 AM
-    schedule: '0 6 * * *',
+    // Once every day at 05:00 AM
+    schedule: '0 5 * * *',
     handler: async (myTimer, context) => {
         try {
             const report = await updatePaymentStatus()
@@ -34,4 +33,3 @@ app.timer('updatePaymentStatus', {
         }
     }
 });
-*/
