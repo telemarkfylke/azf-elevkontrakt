@@ -93,7 +93,7 @@ async function updateMongo(documentId, rateKey, status) {
   updateData['fakturaInfo.' + rateKey + '.status'] = status
 
   // IKKE uncomment dette før vi VET vi skal i prod
-  //await updateDocument(documentId, updateData, 'regular')
+  await updateDocument(documentId, updateData, 'regular')
 }
 
 
