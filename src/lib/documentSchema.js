@@ -202,6 +202,9 @@ const fillManualDocument = (documentData, archiveData, elevData, ansvarligData) 
             returned: "false",
             returnedRegisteredBy: "Ukjent",
             returnedDate: "Ukjent",
+            buyOutBy: "Ukjent",
+            buyOutDate: "Ukjent",
+            boughtOut: "false"
         },
         error: [],
     }
@@ -356,6 +359,9 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
             returned: "false",
             returnedRegisteredBy: "Ukjent",
             returnedDate: "Ukjent",
+            buyOutBy: "Ukjent",
+            buyOutDate: "Ukjent",
+            boughtOut: "false"
         },
         error: [],
         digiTrollData: documentData?.digitrollData // All data from digitroll for reference.
