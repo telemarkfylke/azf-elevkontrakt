@@ -11,6 +11,7 @@ const queryXledger = async (request, fileName) => {
     if(fileName) {
         headers = {
             filename: fileName,
+            approve: 'true',
             'Content-Type': 'application/octet-stream',
             Authorization: `Bearer ${accessToken}`
         }
