@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions');
 const { updatePaymentStatus } = require('../lib/jobs/updatePaymentStatus');
+const { logger } = require('@vtfk/logger');
 
 // Legger det som rute nå for test. bør være timetrigger i prod
 app.http('updatePaymentStatusDev', {
@@ -26,9 +27,11 @@ app.timer('updatePaymentStatus', {
     schedule: '0 5 * * *',
     handler: async (myTimer, context) => {
         try {
+            logger('info', ['updatePaymentStatus', 'Timer trigger function started']);
             const report = await updatePaymentStatus()
             return { status: 200, jsonBody: report }
         } catch (error) {
+            logger('error', ['updatePaymentStatus', error])
             return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
         }
     }
