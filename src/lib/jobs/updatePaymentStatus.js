@@ -91,6 +91,7 @@ function addToSummary(key, summary) {
 async function updateMongo(documentId, rateKey, status) {
   const updateData = {}
   updateData['fakturaInfo.' + rateKey + '.status'] = status
+  updateData['fakturaInfo.' + rateKey + '.betaltDato'] = new Date().toISOString()
 
   // IKKE uncomment dette før vi VET vi skal i prod
   await updateDocument(documentId, updateData, 'regular')
