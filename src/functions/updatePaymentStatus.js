@@ -29,6 +29,7 @@ app.timer('updatePaymentStatus', {
         try {
             logger('info', ['updatePaymentStatus', 'Timer trigger function started']);
             const report = await updatePaymentStatus()
+            logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report]);
             return { status: 200, jsonBody: report }
         } catch (error) {
             logger('error', ['updatePaymentStatus', error])
