@@ -169,15 +169,11 @@ app.http('handleDbRequest', {
                     return { status: 403, body: 'Forbidden' }
                 } 
             }
-            
+            const jsonBody = await request.json()
             if (request.body === null) {
                 return { status: 400, body: 'Bad Request, no body provided' }
-            } else {
-                const jsonBody = await request.json()
-                let isMock = request.query.get('isMock')
-                isMock === 'true' ? isMock = true : isMock = false
-                console.log(jsonBody)
-                const result = await moveAndDeleteDocument(jsonBody.contractID, 'deleted', isMock)
+            } else if(jsonBody.contractID && jsonBody.targetCollection) {
+                const result = await moveAndDeleteDocument(jsonBody.contractID, jsonBody.targetCollection, isMock)
                 if (result.status === 200) {
                     logger('info', [`${logPrefix} - DELETE`, `Document with ID ${jsonBody.contractID} deleted successfully`])
                     return { status: 200, body: `Document with ID ${jsonBody.contractID} deleted successfully` }
@@ -188,6 +184,9 @@ app.http('handleDbRequest', {
                     logger('error', [`${logPrefix} - DELETE`, `Failed to delete document with ID ${jsonBody.contractID}: ${result.body}`])
                     return { status: 500, body: `Failed to delete document with ID ${jsonBody.contractID}: ${result.body}` }
                 }
+            } else {
+                logger('error', [`${logPrefix} - DELETE`, 'Bad Request, contractID or targetCollection missing in body'])
+                return { status: 400, body: 'Bad Request, contractID or targetCollection missing in body' }
             }
         }
     }
