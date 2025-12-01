@@ -182,7 +182,7 @@ const postFormInfo = async (formInfo, isMock) => {
 /**
  * 
  * @param {Object} query 
- * @param {string} documentType | preImport | mock | regular | løpenummer | settings
+ * @param {string} documentType | preImport | mock | regular | løpenummer | settings | history
  * @returns 
  */
 const getDocuments = async (query, documentType) => {
@@ -198,7 +198,7 @@ const getDocuments = async (query, documentType) => {
     if(!documentType) {
         logger('error', [logPrefix, 'Mangler documentType'])
         return {status: 400, error: 'Mangler documentType'}
-    } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings') {
+    } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings' && documentType !== 'history') {
         logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
         return {status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'}
     }
@@ -207,7 +207,7 @@ const getDocuments = async (query, documentType) => {
     let result
     if(documentType === 'mock') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).find(query).toArray()
-    } else if (documentType === 'preimport') {
+    } else if (documentType === 'preImport') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).find(query).toArray()
     } else if (documentType === 'løpenummer') {
         result = await mongoClient.db(mongoDB.dbnameXledgerSerialNumbers).collection(`${mongoDB.serialnumberCollection}`).find(query).sort({ 'iterationNumber': -1 }).limit(1).toArray()
@@ -215,6 +215,8 @@ const getDocuments = async (query, documentType) => {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).find(query).toArray()
     } else if (documentType === 'regular') {
         result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
+    } else if (documentType === 'history') {
+        result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicCollection}`).find(query).toArray()
     } else {
         logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
         return {status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'}

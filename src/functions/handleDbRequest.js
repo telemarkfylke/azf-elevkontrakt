@@ -3,6 +3,7 @@ const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, post
 const { validateRoles } = require('../lib/auth/validateRoles');
 const { archiveDocument } = require('../lib/jobs/queryArchive');
 const { logger } = require('@vtfk/logger');
+const { ObjectId } = require('mongodb');
 
 app.http('handleDbRequest', {
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -15,24 +16,44 @@ app.http('handleDbRequest', {
         isMock === 'true' ? isMock = true : isMock = false
         // Check the request method
         if (request.method === 'GET') {
+            const fetchDocumentsFromTargetCollection = request.headers.get('target-collection') ? request.headers.get('target-collection') : 'regular'
+            // preImport | mock | regular | løpenummer | settings
+            if(fetchDocumentsFromTargetCollection !== 'regular' && fetchDocumentsFromTargetCollection !== 'preImport' && fetchDocumentsFromTargetCollection !== 'mock' && fetchDocumentsFromTargetCollection !== 'løpenummer' && fetchDocumentsFromTargetCollection !== 'settings' && fetchDocumentsFromTargetCollection !== 'history') {
+                logger('error', [`${logPrefix}`, `Invalid target collection specified: ${fetchDocumentsFromTargetCollection}`])
+                return { status: 400, body: 'Bad Request, invalid target collection specified' }
+            }
             //Build a valid query object
             let query = {}
             if(request.query.get('school')) {
                 // Push the school query to the query object
                 query['elevInfo.skole'] = request.query.get('school')
-            }   
+            }
+            
+            if(request.query.get('contractID')) {
+                // Push the contractID query to the query object
+                // Valid format {_id: { $in:  [ '6926bf134830e2222ba37d76', '6926c0592b6fa4d8e9609eb3' ]}}
+                const contractIDs = request.query.get('contractID').split(',')
+                const contractsToQuery = []
+                for(const id of contractIDs) {
+                    contractsToQuery.push( new ObjectId(id))
+                }
+                query['_id'] = { $in: contractsToQuery }
+            }
+
+            if(request.query.get('navn')) {
+                // Push the navn query to the query object
+                query['elevInfo.navn'] = {$regex: request.query.get('navn'), $options: 'i'}
+            }
                      
-            // Check roles/school provided in the query string
+            // Check roles provided in the query string
             if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.read', 'elevkontrakt.readwrite'])) {
-                if(!request.query.get('school')) {
-                    logger('error', [`${logPrefix} - GET`, 'Unauthorized access attempt', authorizationHeader])
-                    return { status: 403, body: 'Forbidden' }
-                } 
-            } 
+                logger('error', [`${logPrefix} - GET`, 'Unauthorized access attempt', authorizationHeader])
+                return { status: 403, body: 'Forbidden' }
+            }
 
             // Get documents from the database
             try {
-                const result = await getDocuments(query, isMock ? 'mock' : 'regular')
+                const result = await getDocuments(query, isMock ? 'mock' : fetchDocumentsFromTargetCollection)
                 return { status: 200, jsonBody: result }
             } catch (error) {
                 logger('error', [logPrefix, 'Error fetching documents from database', error])
