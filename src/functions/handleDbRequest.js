@@ -46,7 +46,7 @@ app.http('handleDbRequest', {
             }
                      
             // Check roles provided in the query string
-            if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.read', 'elevkontrakt.readwrite'])) {
+            if(!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.read', 'elevkontrakt.readwrite', 'elevkontrakt.skoleadministrator-write'])) {
                 logger('error', [`${logPrefix} - GET`, 'Unauthorized access attempt', authorizationHeader])
                 return { status: 403, body: 'Forbidden' }
             }
