@@ -7,6 +7,7 @@ const { getSchoolyear } = require('../../helpers/getSchoolyear.js')
 const { schoolInfoList } = require('../../datasources/tfk-schools.js')
 const axios = require('axios')
 const { teams } = require('../../../../config.js')
+const { fileImport } = require('../queryXledger.js')
 
 /**
  * This job is responsible for importing invoices into Xledger.
@@ -253,10 +254,12 @@ const sendTeamsMessage = async (message) => {
 }
 
 const generateInvoiceImportFile = async () => {
+    const logPrefix = 'generateInvoiceImportFile'
+    logger('info', [logPrefix, 'Starting invoice import file generation job'])
     // Create CSV data array
     const csvDataArray = await createCsvDataArray()
     if(csvDataArray.length === 0) {
-        logger('info', ['generateInvoiceImportFile', 'No data to create CSV file for invoice import'])
+        logger('info', ['logPrefix', 'No data to create CSV file for invoice import'])
         return { message: 'No data to create CSV file for invoice import' }
     }
     // We might have to create the file in batches. Adjust rowsPerBatch to control the size of each batch.
@@ -265,7 +268,7 @@ const generateInvoiceImportFile = async () => {
     if(csvDataArray.length > rowsPerBatch && rowsPerBatch !== 0) {
         batches = Math.ceil(csvDataArray.length / rowsPerBatch)
     }
-
+    const failedToUpdate = []
     for(let i = 0; i < batches; i++) {
         let batchData
         if(rowsPerBatch !== 0) {
@@ -275,36 +278,52 @@ const generateInvoiceImportFile = async () => {
         }
         // Create CSV string from data array
         const csvString = await createCsvString(batchData)
-        // Write CSV string to file
-        const filePath = `./src/data/xledger_files/faktura_files/SO01b_2_Invoice_Base_subledger_import_File_Number_${i + 1}_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
+        const fileNameForImport = `SO01b_2_Invoice_Base_subledger_import_File_Number_${i + 1}_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
+        const filePath = `./src/data/xledger_files/faktura_files/${fileNameForImport}`
         fs.writeFileSync(filePath, csvString, 'utf8')
-        logger('info', ['generateInvoiceImportFile - writeFileSync', `CSV file created at ${filePath}`])
-    }
+        logger('info', [logPrefix, `CSV file created at ${filePath}`])
 
-    /**
-     * ADD logic here to send the CSV file(s) to Xledger via azf-xledger API, then update the documents in the database to mark them as "Fakturert"
-    */
-
-    // Write back to the database that the documents have been invoiced
-    const failedToUpdate = []
-    for (const document of csvDataArray) {
+        // // Import the file to Xledger 
         try {
-            // Get rate from the 'Order No' field
-            const rateNumber = parseInt(document['Order No'].split('-')[2], 10) // JOT-000000001-2-2025-ptc9lm
-            const updateData = { 
-                [`fakturaInfo.rate${rateNumber}.status`]: 'Fakturert',
-                [`fakturaInfo.rate${rateNumber}.faktureringsDato`]: new Date().toISOString(),
-                [`fakturaInfo.rate${rateNumber}.løpenummer`]: document['Order No'],
-                [`fakturaInfo.rate${rateNumber}.sum`]: document['Unit Price']
+            const importResult = await fileImport('SO01b_2', filePath, fileNameForImport)
+            if(importResult.status !== 200) {
+                logger('error', [logPrefix, `Error importing file to Xledger`, importResult])
+                return
+            } else {
+                logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
             }
-            await updateDocument(document.Dummy4, updateData, 'regular')
-            logger('info', ['generateInvoiceImportFile - updateImportedDocument', `Updated document with _id: ${document.Dummy4} as imported to Xledger`])
         } catch (error) {
-            failedToUpdate.push(document.Dummy4)
-            logger('error', ['generateInvoiceImportFile - updateImportedDocument', `Error updating document with _id: ${document.Dummy4} as imported to Xledger`, error])
+            logger('error', [logPrefix, `Error importing file to Xledger`, error])
+            return
         }
-    }
 
+        // After importing, move the file to the finished folder
+        const finishedFilePath = `./src/data/xledger_files/faktura_files/finished/${fileNameForImport}`
+        fs.renameSync(filePath, finishedFilePath)
+        logger('info', [logPrefix, `CSV file moved to finished folder at ${finishedFilePath}`])
+
+        // Write back to the database that the documents have been invoiced
+  
+        for (const document of batchData) {
+            try {
+                // Get rate from the 'Order No' field
+                const rateNumber = parseInt(document['Order No'].split('-')[2], 10) // JOT-000000001-2-2025-ptc9lm
+                const updateData = { 
+                    [`fakturaInfo.rate${rateNumber}.status`]: 'Fakturert',
+                    [`fakturaInfo.rate${rateNumber}.faktureringsDato`]: new Date().toISOString(),
+                    [`fakturaInfo.rate${rateNumber}.løpenummer`]: document['Order No'],
+                    [`fakturaInfo.rate${rateNumber}.sum`]: document['Unit Price']
+                }
+                await updateDocument(document.Dummy4, updateData, 'regular')
+                logger('info', ['logPrefix - updateImportedDocument', `Updated document with _id: ${document.Dummy4} as imported to Xledger`])
+            } catch (error) {
+                failedToUpdate.push(document.Dummy4)
+                logger('error', ['logPrefix - updateImportedDocument', `Error updating document with _id: ${document.Dummy4} as imported to Xledger`, error])
+            }
+        }
+
+    }
+    
     await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, 'invoiceImport')
 
     return {csvDataArray}

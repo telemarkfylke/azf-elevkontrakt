@@ -237,8 +237,8 @@ const sendTeamsMessage = async (message) => {
         return ''
     }
 
-    // Take only the 10 first for test
-    // documents.splice(10)
+    // Take only the 1 first for test
+    // documents.splice(1)
 
     const csvDataArray = []
     const csvDataArrayForManualReview = []
@@ -303,9 +303,15 @@ const sendTeamsMessage = async (message) => {
     // Import the file to Xledger
     try {
         const importResult = await fileImport('SL04-SYS', filePath, fileNameForImport)
-        logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
+        if(importResult.status !== 200) {
+            logger('error', [logPrefix, `Error importing file to Xledger`, importResult])
+            return
+        } else {
+            logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
+        }
     } catch (error) {
         logger('error', [logPrefix, `Error importing file to Xledger`, error])
+        return
     }
 
     // After importing, move the file to the finished folder

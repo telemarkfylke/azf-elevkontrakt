@@ -4,10 +4,16 @@
     const { createCsvDataArray } = require('./xledgerUserImport')
 
     logger('info', ['Starting createCsvDataArray job'])
-
-    logger('info', ['Updating student PC status for utlevering'])
     const statusUser = await createCsvDataArray()
-    logger('info', [`Finished createCsvDataArray job for users. Number of users imported: ${statusUser.csvDataArray.length}`])
+    if(statusUser?.csvDataArray) {
+        logger('info', [`Finished createCsvDataArray job for users. Number of users imported: ${statusUser?.csvDataArray?.length || 0}`])
+    } else if (statusUser?.errors){
+        logger('error', ['Error response from Xledger:', statusUser])
+    } else if (!statusUser) {
+        logger('error', ['No users were imported, unknown error'])
+    } else {
+        logger('info', ['No users were imported'])
+    }
 
     // Finished
     process.exit(1)
