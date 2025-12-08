@@ -1,39 +1,37 @@
-const { app } = require('@azure/functions');
-const { updatePaymentStatus } = require('../lib/jobs/updatePaymentStatus');
-const { logger } = require('@vtfk/logger');
+const { app } = require('@azure/functions')
+const { updatePaymentStatus } = require('../lib/jobs/updatePaymentStatus')
+const { logger } = require('@vtfk/logger')
 
 // Legger det som rute nå for test. bør være timetrigger i prod
 app.http('updatePaymentStatusDev', {
-    methods: ['GET'],
-    authLevel: 'anonymous',
-    route: 'dev/updatePaymentStatus',
-    handler: async (request, context) => {
-        const upn = request.params.upn
-        try {
-            const response = await updatePaymentStatus()
-            return { status: 200, jsonBody: response };
-        } catch (error) {
-            logger('error', ['updatePaymentStatus', error])
-            return { status: 400, jsonBody: error.message }
-        }
-
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'dev/updatePaymentStatus',
+  handler: async (request, context) => {
+    const upn = request.params.upn
+    try {
+      const response = await updatePaymentStatus()
+      return { status: 200, jsonBody: response }
+    } catch (error) {
+      logger('error', ['updatePaymentStatus', error])
+      return { status: 400, jsonBody: error.message }
     }
-});
-
+  }
+})
 
 // Bør være timetrigger i prod
 app.timer('updatePaymentStatus', {
-    // Once every day at 05:00 AM
-    schedule: '0 5 * * *',
-    handler: async (myTimer, context) => {
-        try {
-            logger('info', ['updatePaymentStatus', 'Timer trigger function started']);
-            const report = await updatePaymentStatus()
-            logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report]);
-            return { status: 200, jsonBody: report }
-        } catch (error) {
-            logger('error', ['updatePaymentStatus', error])
-            return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
-        }
+  // Once every day at 05:00 AM
+  schedule: '0 5 * * *',
+  handler: async (myTimer, context) => {
+    try {
+      logger('info', ['updatePaymentStatus', 'Timer trigger function started'])
+      const report = await updatePaymentStatus()
+      logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report])
+      return { status: 200, jsonBody: report }
+    } catch (error) {
+      logger('error', ['updatePaymentStatus', error])
+      return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
     }
-});
+  }
+})

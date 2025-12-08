@@ -1,6 +1,6 @@
 const axios = require('axios').default
 const { archive } = require('../../../config')
-const getAccessToken =  require('../auth/get-endtraid-token')
+const getAccessToken = require('../auth/get-endtraid-token')
 const { logger } = require('@vtfk/logger')
 const { schoolInfoList } = require('../datasources/tfk-schools')
 
@@ -34,8 +34,8 @@ const archiveDocument = async (payload) => {
       title: payload.title,
       AccessCode: '13',
       AccessGroup: school.tilgangsgruppe,
-      Category: "Dokument inn",
-       Contacts: [ // Her vil alltid avsender være eleven, men mottaker kan være enten eleven (over 18) eller en foresatt (for elev under 18)
+      Category: 'Dokument inn',
+      Contacts: [ // Her vil alltid avsender være eleven, men mottaker kan være enten eleven (over 18) eller en foresatt (for elev under 18)
         {
           ReferenceNumber: elevmappe.privatePerson.ssn, // FNR til elev (innlogget i skjema)
           Role: 'Kopi til',
@@ -61,14 +61,14 @@ const archiveDocument = async (payload) => {
           Status: 'F',
           Title: 'Elevavtale - Signert',
           VersionFormat: 'A'
-        },
+        }
       ],
       Paragraph: 'Offl. § 13 jf. fvl. § 13 (1) nr.1',
       ResponsibleEnterpriseNumber: payload.schoolOrgNumber, // Skolens organisasjonsnummer
       Status: 'J',
       Title: 'Elevavtale - Signert',
       Archive: 'Elevdokument',
-      CaseNumber: elevmappe.elevmappe.CaseNumber, // Elevens mappe i arkivet
+      CaseNumber: elevmappe.elevmappe.CaseNumber // Elevens mappe i arkivet
     }
   }
   const accessToken = await getAccessToken(archive.scope)
@@ -76,7 +76,7 @@ const archiveDocument = async (payload) => {
   try {
     data = await axios.post(`${archive.url}/archive`, payloadToArchive, { headers: { Authorization: `Bearer ${accessToken}` } })
   } catch (error) {
-    logger('error', ['archive', error]) 
+    logger('error', ['archive', error])
   }
   return data.data
 }
@@ -85,7 +85,7 @@ const archiveDocument = async (payload) => {
 const syncPrivatePerson = async (ssn) => {
   const accessToken = await getAccessToken(archive.scope)
   const body = {
-    ssn: ssn,
+    ssn,
     forceUpdate: true // Set to true to force update the person in the archive
   }
   let data
@@ -114,7 +114,7 @@ const syncElevMappe = async (ssn) => {
   //   "zipPlace": ""
   // }
   const body = {
-    ssn: ssn,
+    ssn,
     forceUpdate: true // Set to true to force update the person in the archive
   }
   let data

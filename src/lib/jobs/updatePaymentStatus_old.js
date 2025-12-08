@@ -6,10 +6,9 @@
  * 3. If Xledger status now is payed, we update our DB with correct status
  */
 
-
-const { getDocuments, updateDocument } = require('./queryMongoDB.js');
-const { getSalesOrders } = require('./queryXLedger.js');
-const { logger } = require('@vtfk/logger');
+const { getDocuments, updateDocument } = require('./queryMongoDB.js')
+const { getSalesOrders } = require('./queryXLedger.js')
+const { logger } = require('@vtfk/logger')
 const logPrefix = 'updatePaymentStatus'
 
 // Primitiv enum substitutt
@@ -25,100 +24,92 @@ const RateStatus = Object.freeze({
 
 const ExtendedSummaryStatus = Object.freeze({
   ufakturert: 'Ufakturert',
-  gamleRates: 'Gamle løpenummer',
+  gamleRates: 'Gamle løpenummer'
 })
 
 /**
- * 
- * @param {string} rateName 
+ *
+ * @param {string} rateName
  * @returns {Object}
  */
-function addQueryRate(rateName) {
+function addQueryRate (rateName) {
   const array = [{}, {}, {}]
-  array[0]["fakturaInfo." + rateName + ".løpenummer"] = { '$not': { '$in': [RateStatus.ukjent, null] } }
-  array[1]["fakturaInfo." + rateName + ".status"] = { '$not': { '$in': [RateStatus.betalt, RateStatus.utlaan, RateStatus.ikkeBetale, RateStatus.kreditert] } }
-  array[2]["fakturaInfo." + rateName + ".faktureringsDato"] = { '$gt': "2025-10-01T00:00:00.000Z" }
+  array[0]['fakturaInfo.' + rateName + '.løpenummer'] = { $not: { $in: [RateStatus.ukjent, null] } }
+  array[1]['fakturaInfo.' + rateName + '.status'] = { $not: { $in: [RateStatus.betalt, RateStatus.utlaan, RateStatus.ikkeBetale, RateStatus.kreditert] } }
+  array[2]['fakturaInfo.' + rateName + '.faktureringsDato'] = { $gt: '2025-10-01T00:00:00.000Z' }
   return {
-    '$and': array
+    $and: array
   }
 }
 
 /**
- * 
+ *
  * @returns {Object}
  */
-async function fecthContractCandidatesFromMongoDB() {
+async function fecthContractCandidatesFromMongoDB () {
   const query = {
-    '$or': [
+    $or: [
       addQueryRate('rate1'),
       addQueryRate('rate2'),
-      addQueryRate('rate3'),
+      addQueryRate('rate3')
     ]
   }
   return await getDocuments(query, 'regular')
 }
 
 /**
- * 
- * @param {Object} rate 
+ *
+ * @param {Object} rate
  * @returns {boolean}
  */
-function checkRateCandidacy(rate) {
+function checkRateCandidacy (rate) {
   // Ingen løpenummer betyr at vi ikke har fakturert ennå, så vi kan returnere med det samme.
-  if (!rate.løpenummer)
-    return false
+  if (!rate.løpenummer) { return false }
 
-  if (rate.løpenummer.substring(0, 4) === 'JOT-' && (rate.status === RateStatus.fakturert || rate.status === RateStatus.ukjent || rate.status === RateStatus.inkasso))
-    return true
+  if (rate.løpenummer.substring(0, 4) === 'JOT-' && (rate.status === RateStatus.fakturert || rate.status === RateStatus.ukjent || rate.status === RateStatus.inkasso)) { return true }
 
   return false
 }
 
-
 /**
- * 
- * @param {string} key 
- * @param {Object} summary  
+ *
+ * @param {string} key
+ * @param {Object} summary
  */
-function addToSummary(key, summary) {
+function addToSummary (key, summary) {
   if (!summary[key]) {
     summary[key] = 0
   }
   summary[key]++
 }
 
-
-
 /**
- * 
- * @param {Object} dictionaryEntry 
+ *
+ * @param {Object} dictionaryEntry
  * @returns {number}
  */
-async function compareAndUpdateStatus(dictionaryEntry) {
-
+async function compareAndUpdateStatus (dictionaryEntry) {
   if (dictionaryEntry.salesOrders.length === 0) {
     // Her ligger det løpenummer i Jotne uten matchende salgsordrer, importfil er generert, men ikke importert
     return ExtendedSummaryStatus.ufakturert
   }
 
-  let invoiceAmountSum = 0;
-  let remainingAmountSum = 0;
+  let invoiceAmountSum = 0
+  let remainingAmountSum = 0
   for (let i = 0; i < dictionaryEntry.salesOrders.length; i++) {
     invoiceAmountSum += dictionaryEntry.salesOrders[i].invoiceAmount
     remainingAmountSum += dictionaryEntry.salesOrders[i].remainingAmount
   }
 
   if (invoiceAmountSum <= 0) {
-    // Kreditert  
+    // Kreditert
     await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, RateStatus.kreditert)
     return RateStatus.kreditert
-  }
-  else if (remainingAmountSum == 0) {
+  } else if (remainingAmountSum == 0) {
     // Betalt
     await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, RateStatus.betalt)
     return RateStatus.betalt
-  }
-  else if (remainingAmountSum > 0) {
+  } else if (remainingAmountSum > 0) {
     // Ikke betalt
     return RateStatus.fakturert
   }
@@ -126,23 +117,22 @@ async function compareAndUpdateStatus(dictionaryEntry) {
   return RateStatus.ukjent
 }
 
-async function updateMongo(documentId, rateKey, status) {
+async function updateMongo (documentId, rateKey, status) {
   const updateData = {}
   updateData['fakturaInfo.' + rateKey + '.status'] = status
 
   // IKKE uncomment dette før vi VET vi skal i prod
-  //await updateDocument(documentId, updateData, 'regular')
+  // await updateDocument(documentId, updateData, 'regular')
 }
 
-
 /**
- * 
- * @param {Array} xLedgerRows 
- * @param {Object} ratesDictionary 
+ *
+ * @param {Array} xLedgerRows
+ * @param {Object} ratesDictionary
  * @returns {number}
  */
-async function updateDictionaryWithResponse(xLedgerRows, ratesDictionary, summary) {
-  let updates = 0;
+async function updateDictionaryWithResponse (xLedgerRows, ratesDictionary, summary) {
+  const updates = 0
 
   // Sørge for å samle alle salgsordrer på samme extInvoceNr sammen, slik at vi kan tolke dem
   xLedgerRows.forEach(async (row) => {
@@ -163,23 +153,23 @@ async function updateDictionaryWithResponse(xLedgerRows, ratesDictionary, summar
 const updatePaymentStatus_Old = async () => {
   try {
     const documents = await fecthContractCandidatesFromMongoDB()
-    let multihits = 0;
-    let noHits = 0;
-    const targetChunckSize = 400;
+    let multihits = 0
+    let noHits = 0
+    const targetChunckSize = 400
     let ratesToCheck = []
     let ratesDictionary = {}
     const summary = {
-      'Totalt antall i database': documents.result.length,
+      'Totalt antall i database': documents.result.length
     }
 
     for (let index = 0; index < documents.result.length; index++) {
-      const contract = documents.result[index];
-      let hits = 0;
+      const contract = documents.result[index]
+      let hits = 0
       for (const [key, rate] of Object.entries(contract.fakturaInfo)) {
         if (checkRateCandidacy(rate)) {
           hits++
           ratesToCheck.push(rate.løpenummer)
-          ratesDictionary[rate.løpenummer] = { rate: rate, contract: contract, rateKey: key, salesOrders: [] }
+          ratesDictionary[rate.løpenummer] = { rate, contract, rateKey: key, salesOrders: [] }
         }
       }
       if (hits < 1) {
@@ -187,7 +177,7 @@ const updatePaymentStatus_Old = async () => {
         /* Her dukker typisk ting som har løpenummer av gammel type (Digitroll) opp. De kommer i databasespørringen, men har løpenummer som ikke starter med "JOT-" */
         noHits++
       } else if (hits > 1) {
-        multihits++;
+        multihits++
       }
 
       // Handle a chunk of invoices
@@ -203,15 +193,13 @@ const updatePaymentStatus_Old = async () => {
     const xledgerRows = await getSalesOrders(ratesToCheck)
     await updateDictionaryWithResponse(xledgerRows, ratesDictionary, summary)
 
-
     // const updatedRows = await checkBatchesInXledger(ratesToCheck, ratesDictionary)
     return summary
-  }
-  catch (error) {
+  } catch (error) {
     logger('error', [logPrefix, 'Error updating paymentStatus', error])
   }
 }
 
 module.exports = {
-  updatePaymentStatus_Old: updatePaymentStatus_Old,
+  updatePaymentStatus_Old
 }

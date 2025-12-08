@@ -1,26 +1,25 @@
 /**
- * 
+ *
  * @param {Number} rate - The rate for which to calculate the billing year.
  *                         1 for the current year, 2 for the next year, and 3 for the year after that.
  * @returns {Number} - The billing year based on the current year and the rate (rate1, rate2, rate3).
  * @throws {Error} - If the rate is not 1, 2, or 3.
  */
 const getBillingYear = (rate) => {
-    const date = new Date()
-    const year = date.getFullYear()
-    let rateAdjustment = 0
-    if (rate === 1) {
-        rateAdjustment = 0
-    } else if (rate === 2) {
-        rateAdjustment = 1
-    } else if (rate === 3) {
-        rateAdjustment = 2
-    } else {
-        throw new Error('Invalid rate value. Rate must be 1, 2, or 3.')
-    }
-    return (year + rateAdjustment).toString()
+  const date = new Date()
+  const year = date.getFullYear()
+  let rateAdjustment = 0
+  if (rate === 1) {
+    rateAdjustment = 0
+  } else if (rate === 2) {
+    rateAdjustment = 1
+  } else if (rate === 3) {
+    rateAdjustment = 2
+  } else {
+    throw new Error('Invalid rate value. Rate must be 1, 2, or 3.')
+  }
+  return (year + rateAdjustment).toString()
 }
-
 
 /**
  * Fills a document object with provided form, student, and responsible data.
@@ -32,213 +31,213 @@ const getBillingYear = (rate) => {
  * @returns {Object} - The filled document object.
  */
 const fillDocument = (formInfo, elevData, ansvarligData, error) => {
-    const document = {
-        uuid: formInfo?.parseXml.result.ArchiveData.uuid || 'Ukjent',
-        generatedTimeStamp: new Date().toISOString(),
-        lastFINTSyncTimeStamp: new Date().toISOString(), // Timestamp for when the FINT person information was last synced.
-        lastXledgerSyncTimeStamp: 'Ukjent', // Timestamp for when the Xledger person information was updated/created.
-        lastPcInfoSyncTimeStamp: 'Ukjent', // Timestamp for when the PC information from cherwell was last synced.
-        isSigned: "false",
-        isManualContract: "false",
-        isFakturaSent: "false",
-        isImportedToXledger: "false",
-        isError: formInfo?.parseXml.result.ArchiveData?.isError || 'Ukjent',
-        isUnder18: formInfo?.parseXml.result.ArchiveData?.isUnder18 || 'Ukjent',
-        gotAnsvarlig: formInfo?.parseXml.result.ArchiveData.FnrForesatt?.length > 0 ? "true" : "false" || 'Ukjent',
-        isStudent: formInfo?.parseXml.result.ArchiveData.SkoleOrgNr?.length > 0 ? "true" : "false" || 'Ukjent', 
-        skoleOrgNr: formInfo?.parseXml.result.ArchiveData?.SkoleOrgNr || 'Ukjent',
-        unSignedskjemaInfo: {
-            refId: formInfo?.refId || 'Ukjent',
-            acosName: formInfo?.acosName || 'Ukjent',
-            kontraktType: formInfo?.parseXml.result.ArchiveData.typeKontrakt || 'Ukjent',
-            archiveDocumentNumber: formInfo?.archive?.result.DocumentNumber || 'Ukjent',
-            createdTimeStamp: formInfo?.createdTimeStamp || 'Ukjent',
-        },
-        signedSkjemaInfo: {
-            refId: 'Ukjent',
-            acosName: 'Ukjent',
-            kontraktType: 'Ukjent',
-            archiveDocumentNumber: 'Ukjent',
-            createdTimeStamp: 'Ukjent',
-        },
-        signedBy: {
-            navn: 'Ukjent',
-            fnr: 'Ukjent',
-        },
-        xLedgerImportInfo: {
-            importStatus: 'false',
-            importDate: 'Ukjent',
-        },
-        elevInfo: undefined,
-        ansvarligInfo: undefined,
-        fakturaInfo: {
-            rate1: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate. 
-                faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
-                faktureringsDato: undefined,
-                status: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
-                løpenummer: undefined
-            },
-            rate2: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke',
-                faktureringsDato: undefined,
-                status: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
-                løpenummer: undefined
-            },
-            rate3: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
-                faktureringsDato: undefined,
-                status: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
-                løpenummer: undefined
-            },
-        },
-        pcInfo: {
-            released: "false",
-            releaseBy: "Ukjent",
-            releasedDate: "Ukjent",
-            returned: "false",
-            returnedRegisteredBy: "Ukjent",
-            returnedDate: "Ukjent",
-            boughtOut: "false",
-            buyOutBy: "Ukjent",
-            buyOutDate: "Ukjent",
-        },
-        error: error || [],
+  const document = {
+    uuid: formInfo?.parseXml.result.ArchiveData.uuid || 'Ukjent',
+    generatedTimeStamp: new Date().toISOString(),
+    lastFINTSyncTimeStamp: new Date().toISOString(), // Timestamp for when the FINT person information was last synced.
+    lastXledgerSyncTimeStamp: 'Ukjent', // Timestamp for when the Xledger person information was updated/created.
+    lastPcInfoSyncTimeStamp: 'Ukjent', // Timestamp for when the PC information from cherwell was last synced.
+    isSigned: 'false',
+    isManualContract: 'false',
+    isFakturaSent: 'false',
+    isImportedToXledger: 'false',
+    isError: formInfo?.parseXml.result.ArchiveData?.isError || 'Ukjent',
+    isUnder18: formInfo?.parseXml.result.ArchiveData?.isUnder18 || 'Ukjent',
+    gotAnsvarlig: formInfo?.parseXml.result.ArchiveData.FnrForesatt?.length > 0 ? 'true' : 'false' || 'Ukjent',
+    isStudent: formInfo?.parseXml.result.ArchiveData.SkoleOrgNr?.length > 0 ? 'true' : 'false' || 'Ukjent',
+    skoleOrgNr: formInfo?.parseXml.result.ArchiveData?.SkoleOrgNr || 'Ukjent',
+    unSignedskjemaInfo: {
+      refId: formInfo?.refId || 'Ukjent',
+      acosName: formInfo?.acosName || 'Ukjent',
+      kontraktType: formInfo?.parseXml.result.ArchiveData.typeKontrakt || 'Ukjent',
+      archiveDocumentNumber: formInfo?.archive?.result.DocumentNumber || 'Ukjent',
+      createdTimeStamp: formInfo?.createdTimeStamp || 'Ukjent'
+    },
+    signedSkjemaInfo: {
+      refId: 'Ukjent',
+      acosName: 'Ukjent',
+      kontraktType: 'Ukjent',
+      archiveDocumentNumber: 'Ukjent',
+      createdTimeStamp: 'Ukjent'
+    },
+    signedBy: {
+      navn: 'Ukjent',
+      fnr: 'Ukjent'
+    },
+    xLedgerImportInfo: {
+      importStatus: 'false',
+      importDate: 'Ukjent'
+    },
+    elevInfo: undefined,
+    ansvarligInfo: undefined,
+    fakturaInfo: {
+      rate1: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
+        faktureringsDato: undefined,
+        status: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
+        løpenummer: undefined
+      },
+      rate2: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke',
+        faktureringsDato: undefined,
+        status: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
+        løpenummer: undefined
+      },
+      rate3: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
+        faktureringsDato: undefined,
+        status: formInfo?.parseXml.result.ArchiveData.typeKontrakt.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
+        løpenummer: undefined
+      }
+    },
+    pcInfo: {
+      released: 'false',
+      releaseBy: 'Ukjent',
+      releasedDate: 'Ukjent',
+      returned: 'false',
+      returnedRegisteredBy: 'Ukjent',
+      returnedDate: 'Ukjent',
+      boughtOut: 'false',
+      buyOutBy: 'Ukjent',
+      buyOutDate: 'Ukjent'
+    },
+    error: error || []
+  }
+  if (elevData?.status !== 404) {
+    document.elevInfo = {
+      navn: elevData?.navn || 'Ukjent',
+      fornavn: elevData?.fornavn || 'Ukjent',
+      etternavn: elevData?.etternavn || 'Ukjent',
+      upn: elevData?.upn || 'Ukjent',
+      fnr: formInfo?.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
+      elevnr: elevData?.elevnummer || 'Ukjent'
     }
-    if(elevData?.status !== 404) {
-        document.elevInfo = {
-            navn: elevData?.navn || 'Ukjent',
-            fornavn: elevData?.fornavn || 'Ukjent',
-            etternavn: elevData?.etternavn || 'Ukjent',
-            upn: elevData?.upn || 'Ukjent',
-            fnr: formInfo?.parseXml.result.ArchiveData.FnrElev || 'Ukjent',
-            elevnr: elevData?.elevnummer || 'Ukjent',
-        }
-        if(elevData?.elevforhold === undefined) {
-            document.elevInfo.skole = 'Ukjent';
-            document.elevInfo.klasse = 'Ukjent';
-            document.elevInfo.trinn = 'Ukjent';
-        } else {
-            document.elevInfo.skole = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.skole?.navn || 'Ukjent'
-            document.elevInfo.klasse = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.navn || 'Ukjent'
-            document.elevInfo.trinn = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.trinn || 'Ukjent'
-        }
+    if (elevData?.elevforhold === undefined) {
+      document.elevInfo.skole = 'Ukjent'
+      document.elevInfo.klasse = 'Ukjent'
+      document.elevInfo.trinn = 'Ukjent'
+    } else {
+      document.elevInfo.skole = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.skole?.navn || 'Ukjent'
+      document.elevInfo.klasse = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.navn || 'Ukjent'
+      document.elevInfo.trinn = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.trinn || 'Ukjent'
     }
-    if(ansvarligData !== undefined) {
-        document.ansvarligInfo = {
-            navn: ansvarligData?.fulltnavn || 'Ukjent',
-            fnr: formInfo.parseXml.result.ArchiveData?.FnrForesatt || 'Ukjent',
-        }
+  }
+  if (ansvarligData !== undefined) {
+    document.ansvarligInfo = {
+      navn: ansvarligData?.fulltnavn || 'Ukjent',
+      fnr: formInfo.parseXml.result.ArchiveData?.FnrForesatt || 'Ukjent'
     }
-    return document
+  }
+  return document
 }
 
 const fillManualDocument = (documentData, archiveData, elevData, ansvarligData) => {
-    const document = {
-        uuid: crypto.randomUUID(),
-        generatedTimeStamp: new Date().toISOString(),
-        isSigned: "true",
-        isManualContract: "true",
-        isFakturaSent: "false",
-        isImportedToXledger: "false",
-        isError: 'Ukjent',
-        isUnder18: 'Ukjent',
-        gotAnsvarlig: documentData.foresatt === '' ? "false" : "true" || 'Ukjent',
-        isStudent: documentData?.schoolOrgNumber !== '' ? "true" : "false" || 'Ukjent', 
-        skoleOrgNr: documentData?.schoolOrgNumber || 'Ukjent',
-        unSignedskjemaInfo: {
-            refId: 'Ukjent',
-            acosName: 'Manuelt kontraktsdokument',
-            kontraktType: documentData?.type || 'Ukjent',
-            archiveDocumentNumber: 'Ukjent',
-            createdTimeStamp: 'Ukjent',
-        },
-        signedSkjemaInfo: {
-            refId: 'Ukjent',
-            acosName: 'Manuelt kontraktsdokument',
-            kontraktType: documentData?.type || 'Ukjent',
-            archiveDocumentNumber: archiveData?.DocumentNumber || 'Ukjent',
-            createdTimeStamp: new Date().toISOString(),
-        },
-        signedBy: {
-            navn: ansvarligData?.fulltnavn || 'Ukjent',
-            fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent',
-        },
-        xLedgerImportInfo: {
-            importStatus: 'false',
-            importDate: 'Ukjent',
-        },
-        elevInfo: undefined,
-        ansvarligInfo: undefined,
-        fakturaInfo: {
-            rate1: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate. 
-                faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
-                faktureringsDato: undefined,
-                status: documentData?.type.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
-                løpenummer: undefined
-            },
-            rate2: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke', 
-                faktureringsDato: undefined,
-                status: documentData?.type.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
-                løpenummer: undefined
-            },
-            rate3: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
-                faktureringsDato: undefined,
-                status: documentData?.type.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
-                løpenummer: undefined
-            },
-        },
-        pcInfo: {
-            released: "false",
-            releaseBy: "Ukjent",
-            releasedDate: "Ukjent",
-            returned: "false",
-            returnedRegisteredBy: "Ukjent",
-            returnedDate: "Ukjent",
-            buyOutBy: "Ukjent",
-            buyOutDate: "Ukjent",
-            boughtOut: "false"
-        },
-        error: [],
+  const document = {
+    uuid: crypto.randomUUID(),
+    generatedTimeStamp: new Date().toISOString(),
+    isSigned: 'true',
+    isManualContract: 'true',
+    isFakturaSent: 'false',
+    isImportedToXledger: 'false',
+    isError: 'Ukjent',
+    isUnder18: 'Ukjent',
+    gotAnsvarlig: documentData.foresatt === '' ? 'false' : 'true' || 'Ukjent',
+    isStudent: documentData?.schoolOrgNumber !== '' ? 'true' : 'false' || 'Ukjent',
+    skoleOrgNr: documentData?.schoolOrgNumber || 'Ukjent',
+    unSignedskjemaInfo: {
+      refId: 'Ukjent',
+      acosName: 'Manuelt kontraktsdokument',
+      kontraktType: documentData?.type || 'Ukjent',
+      archiveDocumentNumber: 'Ukjent',
+      createdTimeStamp: 'Ukjent'
+    },
+    signedSkjemaInfo: {
+      refId: 'Ukjent',
+      acosName: 'Manuelt kontraktsdokument',
+      kontraktType: documentData?.type || 'Ukjent',
+      archiveDocumentNumber: archiveData?.DocumentNumber || 'Ukjent',
+      createdTimeStamp: new Date().toISOString()
+    },
+    signedBy: {
+      navn: ansvarligData?.fulltnavn || 'Ukjent',
+      fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent'
+    },
+    xLedgerImportInfo: {
+      importStatus: 'false',
+      importDate: 'Ukjent'
+    },
+    elevInfo: undefined,
+    ansvarligInfo: undefined,
+    fakturaInfo: {
+      rate1: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(1) : 'Utlån faktureres ikke',
+        faktureringsDato: undefined,
+        status: documentData?.type.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
+        løpenummer: undefined
+      },
+      rate2: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(2) : 'Utlån faktureres ikke',
+        faktureringsDato: undefined,
+        status: documentData?.type.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
+        løpenummer: undefined
+      },
+      rate3: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: documentData?.type.toLowerCase() === 'leieavtale' ? getBillingYear(3) : 'Utlån faktureres ikke',
+        faktureringsDato: undefined,
+        status: documentData?.type.toLowerCase() === 'leieavtale' ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
+        løpenummer: undefined
+      }
+    },
+    pcInfo: {
+      released: 'false',
+      releaseBy: 'Ukjent',
+      releasedDate: 'Ukjent',
+      returned: 'false',
+      returnedRegisteredBy: 'Ukjent',
+      returnedDate: 'Ukjent',
+      buyOutBy: 'Ukjent',
+      buyOutDate: 'Ukjent',
+      boughtOut: 'false'
+    },
+    error: []
+  }
+  if (elevData?.status !== 404) {
+    document.elevInfo = {
+      navn: elevData?.navn || 'Ukjent',
+      fornavn: elevData?.fornavn || 'Ukjent',
+      etternavn: elevData?.etternavn || 'Ukjent',
+      upn: elevData?.upn || 'Ukjent',
+      fnr: documentData?.fnr || 'Ukjent',
+      elevnr: elevData?.elevnummer || 'Ukjent'
     }
-    if(elevData?.status !== 404) {
-        document.elevInfo = {
-            navn: elevData?.navn || 'Ukjent',
-            fornavn: elevData?.fornavn || 'Ukjent',
-            etternavn: elevData?.etternavn || 'Ukjent',
-            upn: elevData?.upn || 'Ukjent',
-            fnr: documentData?.fnr || 'Ukjent',
-            elevnr: elevData?.elevnummer || 'Ukjent',
-        }
-        if(elevData?.elevforhold === undefined) {
-            document.elevInfo.skole = 'Ukjent';
-            document.elevInfo.klasse = 'Ukjent';
-            document.elevInfo.trinn = 'Ukjent';
-        } else {
-            document.elevInfo.skole = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.skole?.navn || 'Ukjent'
-            document.elevInfo.klasse = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.navn || 'Ukjent'
-            document.elevInfo.trinn = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.trinn || 'Ukjent'
-        }
+    if (elevData?.elevforhold === undefined) {
+      document.elevInfo.skole = 'Ukjent'
+      document.elevInfo.klasse = 'Ukjent'
+      document.elevInfo.trinn = 'Ukjent'
+    } else {
+      document.elevInfo.skole = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.skole?.navn || 'Ukjent'
+      document.elevInfo.klasse = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.navn || 'Ukjent'
+      document.elevInfo.trinn = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.trinn || 'Ukjent'
     }
-    if(ansvarligData !== undefined) {
-        document.ansvarligInfo = {
-            navn: ansvarligData?.fulltnavn || 'Ukjent',
-            fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent',
-        }
+  }
+  if (ansvarligData !== undefined) {
+    document.ansvarligInfo = {
+      navn: ansvarligData?.fulltnavn || 'Ukjent',
+      fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent'
     }
-    return document
+  }
+  return document
 }
 
 const digitrollImportDocument = (documentData, ansvarligData) => {
-    const handleStatusField = (fakturaEntries, type) => {
-        /**
+  const handleStatusField = (fakturaEntries, type) => {
+    /**
          * Example fakturaEntries:
          *  {
          *      "faktureringsår": "2020",
@@ -250,152 +249,152 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
          *  }
          */
 
-        //
-        if(fakturaEntries === undefined && type.toLowerCase() === 'leieavtale') return 'Ikke Fakturert'
-        if(fakturaEntries === undefined && type.toLowerCase() === 'låneavtale') return 'Utlån faktureres ikke'
-        if(type.toLowerCase() === 'låneavtale') return 'Utlån faktureres ikke'
-        if(fakturaEntries?.status.toLowerCase() === 'betalt') return 'Betalt'
+    //
+    if (fakturaEntries === undefined && type.toLowerCase() === 'leieavtale') return 'Ikke Fakturert'
+    if (fakturaEntries === undefined && type.toLowerCase() === 'låneavtale') return 'Utlån faktureres ikke'
+    if (type.toLowerCase() === 'låneavtale') return 'Utlån faktureres ikke'
+    if (fakturaEntries?.status.toLowerCase() === 'betalt') return 'Betalt'
 
-        if(fakturaEntries?.status.toLowerCase() === 'overført inkasso') {
-            return 'Overført inkasso' // Overført inkasso is considered paid (transferred to Intrum)
-            // Check if the fakturaEntries.betaltDato has a value, if it does, return "Betalt", else return "Overført Inkasso"
-            // if(fakturaEntries.betaltDato !== '' || fakturaEntries.betaltDato !== undefined || fakturaEntries.betaltDato !== null) {
-            //     return 'Betalt'
-            // } else {
-            //     return 'Overført Inkasso'
-            // }
-        }
+    if (fakturaEntries?.status.toLowerCase() === 'overført inkasso') {
+      return 'Overført inkasso' // Overført inkasso is considered paid (transferred to Intrum)
+      // Check if the fakturaEntries.betaltDato has a value, if it does, return "Betalt", else return "Overført Inkasso"
+      // if(fakturaEntries.betaltDato !== '' || fakturaEntries.betaltDato !== undefined || fakturaEntries.betaltDato !== null) {
+      //     return 'Betalt'
+      // } else {
+      //     return 'Overført Inkasso'
+      // }
+    }
 
-        if(fakturaEntries?.status.toLowerCase() === 'overført faktura') {
-            return 'Betalt' // Overført faktura is considered paid (transferred to xledger/visma)
-            // Check if the fakturaEntries.betaltDato has a value, if it does, return "Betalt", else return "Overført Inkasso"
-            // if(fakturaEntries.betaltDato !== '' || fakturaEntries.betaltDato !== undefined || fakturaEntries.betaltDato !== null) {
-            //     return 'Betalt'
-            // } else {
-            //     return 'Overført Betalt'
-            // }
-        }
+    if (fakturaEntries?.status.toLowerCase() === 'overført faktura') {
+      return 'Betalt' // Overført faktura is considered paid (transferred to xledger/visma)
+      // Check if the fakturaEntries.betaltDato has a value, if it does, return "Betalt", else return "Overført Inkasso"
+      // if(fakturaEntries.betaltDato !== '' || fakturaEntries.betaltDato !== undefined || fakturaEntries.betaltDato !== null) {
+      //     return 'Betalt'
+      // } else {
+      //     return 'Overført Betalt'
+      // }
+    }
 
-        // Not payed in digitroll (Nets), not transferred to xledger/visma (faktura) or intrum (inkasso). Rate yet to be payed.
-        if(fakturaEntries?.status.toLowerCase() === 'ikke betalt') {
-            return 'Ikke Fakturert'
-        }
+    // Not payed in digitroll (Nets), not transferred to xledger/visma (faktura) or intrum (inkasso). Rate yet to be payed.
+    if (fakturaEntries?.status.toLowerCase() === 'ikke betalt') {
+      return 'Ikke Fakturert'
+    }
 
-        // If the status is "Skal ikke betale", return "Skal ikke betale". For instance if the student for some reason is exempt from paying. Or payment is handled outside of the system.
-        if(fakturaEntries?.status.toLowerCase() === 'skal ikke betale') {
-            return 'Skal ikke betale'
-        }
+    // If the status is "Skal ikke betale", return "Skal ikke betale". For instance if the student for some reason is exempt from paying. Or payment is handled outside of the system.
+    if (fakturaEntries?.status.toLowerCase() === 'skal ikke betale') {
+      return 'Skal ikke betale'
     }
-    const document = {
-        uuid: crypto.randomUUID(),
-        generatedTimeStamp: new Date().toISOString(),
-        isSigned: "true",
-        isManualContract: "false",
-        isFakturaSent: "true",
-        isImportedToXledger: "false",
-        isImportedFromDigiTroll: "true",
-        isError: 'Ukjent',
-        isUnder18: 'Ukjent',
-        gotAnsvarlig: documentData?.foresatt === '' ? "false" : "true" || 'Ukjent', // "Signert av" !== "Navn" ? true : false (fra digitroll)
-        isStudent: documentData?.schoolOrgNumber !== '' ? "true" : "false" || 'Ukjent',
-        skoleOrgNr: documentData?.schoolOrgNumber || 'Ukjent',
-        unSignedskjemaInfo: {
-            refId: documentData?.avtaleId || 'Ukjent', // Digitroll avtale ID
-            acosName: documentData?.filnavn || 'Ukjent', // Digitroll filnavn
-            kontraktType: documentData?.["type"] || 'Ukjent', // Digitroll avtalenavn (Skal alt konverteres til leieavtale eller låneavtale?)
-            archiveDocumentNumber: 'Ukjent', // Ukjent
-            createdTimeStamp: documentData?.createdTimeStamp || 'Ukjent', // new Date("Laget dato").toISOString() (Datoen dokumentet ble laget i Digitroll)
-        },
-        signedSkjemaInfo: {
-            refId: documentData?.avtaleId || 'Ukjent', // Digitroll avtale ID
-            acosName: documentData?.filnavn || 'Ukjent', // Digitroll filnavn
-            kontraktType: documentData?.["type"] || 'Ukjent', // Digitroll avtalenavn (Skal alt konverteres til leieavtale eller låneavtale?)
-            archiveDocumentNumber: 'Ukjent', // Ukjent
-            createdTimeStamp: documentData?.createdTimeStamp || 'Ukjent', // new Date("Signert dato").toISOString() (Datoen dokumentet ble laget i Digitroll)
-        },
-        signedBy: {
-            navn: documentData?.signedByName || 'Ukjent' || 'Ukjent', // "Signert av" fra digitroll
-            fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent', // Ukjent, har ikke dette i digitroll
-        },
-        xLedgerImportInfo: {
-            importStatus: 'false',
-            importDate: 'Ukjent',
-        },
-        elevInfo: undefined,
-        ansvarligInfo: undefined,
-        fakturaInfo: {
-            rate1: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate. 
-                faktureringsår: documentData?.["fakturaEntries"][0]?.["faktureringsår"] || "Ukjent",
-                faktureringsDato: documentData?.["fakturaEntries"][0]?.["faktureringsDato"] || "Ukjent",
-                betaltDato: documentData?.["fakturaEntries"][0]?.["betaltDato"] || "Ukjent",
-                status: handleStatusField(documentData?.["fakturaEntries"][0], documentData?.["type"]),
-                sum: documentData?.["fakturaEntries"][0]?.["sum"] || "Ukjent",
-                løpenummer: documentData?.["fakturaEntries"][0]?.["løpenummer"] || "Ukjent",
-            },
-            rate2: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: documentData?.["fakturaEntries"][1]?.["faktureringsår"] || "Ukjent",
-                faktureringsDato: documentData?.["fakturaEntries"][1]?.["faktureringsDato"] || "Ukjent",
-                betaltDato: documentData?.["fakturaEntries"][1]?.["betaltDato"] || "Ukjent",
-                status: handleStatusField(documentData?.["fakturaEntries"][1], documentData?.["type"]),
-                sum: documentData?.["fakturaEntries"][1]?.["sum"] || "Ukjent",
-                løpenummer: documentData?.["fakturaEntries"][1]?.["løpenummer"] || "Ukjent"
-            },
-            rate3: {
-                // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-                faktureringsår: documentData?.["fakturaEntries"][2]?.["faktureringsår"] || "Ukjent",
-                faktureringsDato: documentData?.["fakturaEntries"][2]?.["faktureringsDato"] || "Ukjent",
-                betaltDato: documentData?.["fakturaEntries"][2]?.["betaltDato"] || "Ukjent",
-                status: handleStatusField(documentData?.["fakturaEntries"][2], documentData?.["type"]),
-                sum: documentData?.["fakturaEntries"][2]?.["sum"] || "Ukjent",
-                løpenummer: documentData?.["fakturaEntries"][2]?.["løpenummer"] || "Ukjent"
-            },
-        },
-        pcInfo: {
-            released: "false",
-            releaseBy: "Ukjent",
-            releasedDate: "Ukjent",
-            returned: "false",
-            returnedRegisteredBy: "Ukjent",
-            returnedDate: "Ukjent",
-            buyOutBy: "Ukjent",
-            buyOutDate: "Ukjent",
-            boughtOut: "false"
-        },
-        error: [],
-        digiTrollData: documentData?.digitrollData // All data from digitroll for reference.
+  }
+  const document = {
+    uuid: crypto.randomUUID(),
+    generatedTimeStamp: new Date().toISOString(),
+    isSigned: 'true',
+    isManualContract: 'false',
+    isFakturaSent: 'true',
+    isImportedToXledger: 'false',
+    isImportedFromDigiTroll: 'true',
+    isError: 'Ukjent',
+    isUnder18: 'Ukjent',
+    gotAnsvarlig: documentData?.foresatt === '' ? 'false' : 'true' || 'Ukjent', // "Signert av" !== "Navn" ? true : false (fra digitroll)
+    isStudent: documentData?.schoolOrgNumber !== '' ? 'true' : 'false' || 'Ukjent',
+    skoleOrgNr: documentData?.schoolOrgNumber || 'Ukjent',
+    unSignedskjemaInfo: {
+      refId: documentData?.avtaleId || 'Ukjent', // Digitroll avtale ID
+      acosName: documentData?.filnavn || 'Ukjent', // Digitroll filnavn
+      kontraktType: documentData?.type || 'Ukjent', // Digitroll avtalenavn (Skal alt konverteres til leieavtale eller låneavtale?)
+      archiveDocumentNumber: 'Ukjent', // Ukjent
+      createdTimeStamp: documentData?.createdTimeStamp || 'Ukjent' // new Date("Laget dato").toISOString() (Datoen dokumentet ble laget i Digitroll)
+    },
+    signedSkjemaInfo: {
+      refId: documentData?.avtaleId || 'Ukjent', // Digitroll avtale ID
+      acosName: documentData?.filnavn || 'Ukjent', // Digitroll filnavn
+      kontraktType: documentData?.type || 'Ukjent', // Digitroll avtalenavn (Skal alt konverteres til leieavtale eller låneavtale?)
+      archiveDocumentNumber: 'Ukjent', // Ukjent
+      createdTimeStamp: documentData?.createdTimeStamp || 'Ukjent' // new Date("Signert dato").toISOString() (Datoen dokumentet ble laget i Digitroll)
+    },
+    signedBy: {
+      navn: documentData?.signedByName || 'Ukjent' || 'Ukjent', // "Signert av" fra digitroll
+      fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent' // Ukjent, har ikke dette i digitroll
+    },
+    xLedgerImportInfo: {
+      importStatus: 'false',
+      importDate: 'Ukjent'
+    },
+    elevInfo: undefined,
+    ansvarligInfo: undefined,
+    fakturaInfo: {
+      rate1: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: documentData?.fakturaEntries[0]?.['faktureringsår'] || 'Ukjent',
+        faktureringsDato: documentData?.fakturaEntries[0]?.faktureringsDato || 'Ukjent',
+        betaltDato: documentData?.fakturaEntries[0]?.betaltDato || 'Ukjent',
+        status: handleStatusField(documentData?.fakturaEntries[0], documentData?.type),
+        sum: documentData?.fakturaEntries[0]?.sum || 'Ukjent',
+        løpenummer: documentData?.fakturaEntries[0]?.['løpenummer'] || 'Ukjent'
+      },
+      rate2: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: documentData?.fakturaEntries[1]?.['faktureringsår'] || 'Ukjent',
+        faktureringsDato: documentData?.fakturaEntries[1]?.faktureringsDato || 'Ukjent',
+        betaltDato: documentData?.fakturaEntries[1]?.betaltDato || 'Ukjent',
+        status: handleStatusField(documentData?.fakturaEntries[1], documentData?.type),
+        sum: documentData?.fakturaEntries[1]?.sum || 'Ukjent',
+        løpenummer: documentData?.fakturaEntries[1]?.['løpenummer'] || 'Ukjent'
+      },
+      rate3: {
+        // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
+        faktureringsår: documentData?.fakturaEntries[2]?.['faktureringsår'] || 'Ukjent',
+        faktureringsDato: documentData?.fakturaEntries[2]?.faktureringsDato || 'Ukjent',
+        betaltDato: documentData?.fakturaEntries[2]?.betaltDato || 'Ukjent',
+        status: handleStatusField(documentData?.fakturaEntries[2], documentData?.type),
+        sum: documentData?.fakturaEntries[2]?.sum || 'Ukjent',
+        løpenummer: documentData?.fakturaEntries[2]?.['løpenummer'] || 'Ukjent'
+      }
+    },
+    pcInfo: {
+      released: 'false',
+      releaseBy: 'Ukjent',
+      releasedDate: 'Ukjent',
+      returned: 'false',
+      returnedRegisteredBy: 'Ukjent',
+      returnedDate: 'Ukjent',
+      buyOutBy: 'Ukjent',
+      buyOutDate: 'Ukjent',
+      boughtOut: 'false'
+    },
+    error: [],
+    digiTrollData: documentData?.digitrollData // All data from digitroll for reference.
+  }
+  if (documentData.elevData) {
+    document.elevInfo = {
+      navn: documentData.elevData?.navn || 'Ukjent',
+      fornavn: documentData.elevData?.fornavn || 'Ukjent',
+      etternavn: documentData.elevData?.etternavn || 'Ukjent',
+      upn: documentData.elevData?.upn || 'Ukjent',
+      fnr: documentData.elevData?.fnr || 'Ukjent',
+      elevnr: documentData.elevData?.elevnummer || 'Ukjent'
     }
-    if(documentData.elevData) {
-        document.elevInfo = {
-            navn: documentData.elevData?.navn || 'Ukjent',
-            fornavn: documentData.elevData?.fornavn || 'Ukjent',
-            etternavn: documentData.elevData?.etternavn || 'Ukjent',
-            upn: documentData.elevData?.upn || 'Ukjent',
-            fnr: documentData.elevData?.fnr || 'Ukjent',
-            elevnr: documentData.elevData?.elevnummer || 'Ukjent',
-        }
-        if(documentData.elevData?.elevforhold) {
-            document.elevInfo.skole = documentData.elevData.elevforhold.skole || 'Ukjent';
-            document.elevInfo.klasse = documentData.elevData.elevforhold.klasse || 'Ukjent';
-            document.elevInfo.trinn = documentData.elevData.elevforhold.trinn || 'Ukjent';
-        } 
+    if (documentData.elevData?.elevforhold) {
+      document.elevInfo.skole = documentData.elevData.elevforhold.skole || 'Ukjent'
+      document.elevInfo.klasse = documentData.elevData.elevforhold.klasse || 'Ukjent'
+      document.elevInfo.trinn = documentData.elevData.elevforhold.trinn || 'Ukjent'
     }
-    if(ansvarligData === undefined) {
-        document.ansvarligInfo = {
-            navn: ansvarligData?.fulltnavn || 'Ukjent',
-            fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent',
-        } 
-    } else {
-        document.ansvarligInfo = {
-            navn: documentData?.foresattNavn || 'Ukjent',
-            fnr: documentData?.foresatt || 'Ukjent',
-        }
+  }
+  if (ansvarligData === undefined) {
+    document.ansvarligInfo = {
+      navn: ansvarligData?.fulltnavn || 'Ukjent',
+      fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent'
     }
-    return document
+  } else {
+    document.ansvarligInfo = {
+      navn: documentData?.foresattNavn || 'Ukjent',
+      fnr: documentData?.foresatt || 'Ukjent'
+    }
+  }
+  return document
 }
 module.exports = {
-    fillDocument,
-    fillManualDocument,
-    digitrollImportDocument
+  fillDocument,
+  fillManualDocument,
+  digitrollImportDocument
 }

@@ -7,22 +7,22 @@ const { decodeToken } = require('./decodeToken')
  * @returns {boolean} True if the user has the required role, false otherwise
  */
 const validateRoles = (token, role) => {
-    if (!role) {
-      return false
-    }
-    if (!token) {
-      return false
-    }
-    token = token.split(' ')[1]
-    const toLowerCase = (arr) => arr.map((r) => r.toLowerCase())
-    // Convert the roles to lowercase
-    const tokenRoles = decodeToken(token, ['roles'])
-    const tokenRolesLower = toLowerCase(tokenRoles.roles)
+  if (!role) {
+    return false
+  }
+  if (!token) {
+    return false
+  }
+  token = token.split(' ')[1]
+  const toLowerCase = (arr) => arr.map((r) => r.toLowerCase())
+  // Convert the roles to lowercase
+  const tokenRoles = decodeToken(token, ['roles'])
+  const tokenRolesLower = toLowerCase(tokenRoles.roles)
 
-    role = toLowerCase(role)
-    // Check if the user has the required role.
-    const hasRole = tokenRolesLower.some((r) => role.includes(r))
-    return hasRole
+  role = toLowerCase(role)
+  // Check if the user has the required role.
+  const hasRole = tokenRolesLower.some((r) => role.includes(r))
+  return hasRole
 }
 
 module.exports = {
