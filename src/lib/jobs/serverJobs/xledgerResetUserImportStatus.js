@@ -1,5 +1,5 @@
 const { logger } = require('@vtfk/logger')
-const { getDocuments, updateDocument } = require('./queryMongoDB.js')
+const { getDocuments, updateDocument } = require('../queryMongoDB.js')
 
 /**
  * This job is responsible for resetting the import status for user in the contracts.
