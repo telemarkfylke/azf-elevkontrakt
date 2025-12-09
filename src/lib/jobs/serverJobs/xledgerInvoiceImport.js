@@ -286,12 +286,7 @@ const generateInvoiceImportFile = async () => {
     // // Import the file to Xledger
     try {
       const importResult = await fileImport('SO01b_2', filePath, fileNameForImport)
-      if (importResult.status !== 200) {
-        logger('error', [logPrefix, 'Error importing file to Xledger', importResult])
-        return
-      } else {
-        logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
-      }
+      logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
     } catch (error) {
       logger('error', [logPrefix, 'Error importing file to Xledger', error])
       return
