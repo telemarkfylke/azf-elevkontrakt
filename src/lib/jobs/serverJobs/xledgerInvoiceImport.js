@@ -20,7 +20,7 @@ const { fileImport } = require('../queryXledger.js')
 
 const getThisYearsPriceList = async () => {
   const settings = await getDocuments({}, 'settings')
-  return { prices: settings.result[0].prices, exceptionsFromRegularPrices: settings.result[0].exceptionsFromRegularPrices } || {}
+  return { prices: settings.result[0].prices, exceptionsFromRegularPrices: settings.result[0].exceptionsFromRegularPrices, exceptionsFromInvoiceFlow: settings.result[0].exceptionsFromInvoiceFlow } || {}
 }
 
 /**
@@ -54,7 +54,7 @@ const getXledgerInvoiceImports = async () => {
 
   const currentSchoolYear = getSchoolyear().split('-')[0] // E.g., "2024/2025" -> "2024"
   const query = {
-    // '_id': { $in: [new ObjectId('68948f665166f5c34fb43154'), new ObjectId('68eca0803d0c9adcaa16b8c6'), new ObjectId('68c6e64b944198a0dd2986a8'), new ObjectId('6894c7b1a16460009a36564f')] }, // Only specific documents for testing
+    // '_id': { $in: [new ObjectId('68344862d29bf2ace91ac102'), new ObjectId('683c4575e898fc6f3b65b128'), new ObjectId('6840accce898fc6f3b65b12c'), new ObjectId('6840accde898fc6f3b65b12d')] }, // Only specific documents for testing
     'unSignedskjemaInfo.kontraktType': { $in: ['Leieavtale', 'leieavtale'] }, // Only contracts of type 'Leieavtale' or 'leieavtale'
     isImportedToXledger: { $eq: true }, // Already imported to Xledger (this school year, a job will reset this field for all documents at the start of a new school year)
     importedToXledgerAt: { $lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Check that the document import is 7 days older or more
@@ -105,7 +105,7 @@ const createCsvDataArray = async () => {
     return []
   }
 
-  const { prices, exceptionsFromRegularPrices } = await getThisYearsPriceList()
+  const { prices, exceptionsFromRegularPrices, exceptionsFromInvoiceFlow } = await getThisYearsPriceList()
 
   // Function to determine the correct price for a student
   const returnCorrectPriceForStudent = (fnr, studentClass, prices, exceptionsFromRegularPrices) => {
@@ -134,10 +134,23 @@ const createCsvDataArray = async () => {
     return prices.regularPrice
   }
 
+  // Function to check if a student has an exception in the invoice flow
+  const hasInvoiceFlowException = (fnr, exceptionsFromInvoiceFlow) => {
+    const exception = exceptionsFromInvoiceFlow.students.find(entry => entry.fnr === fnr)
+    return !!exception
+  }
   // documents.splice(10) // Limit to first 10 documents for testing
 
   const csvDataArray = []
   for (const { rateToBeInvoiced, document } of documents) {
+
+    const hasException = hasInvoiceFlowException(document.elevInfo.fnr, exceptionsFromInvoiceFlow)
+    if (hasException) {
+      // Using Error for easy notification to teams, so we know why we are skipping this document, and as a reminder to remove the exception later/manually handle the invoice
+      logger('error', ['createCsvDataArray', `Document with _id: ${document._id} has an exception in the invoice flow. Skipping invoice import.`])
+      continue // Skip this document
+    }
+
     const schoolInfo = schoolInfoList.find(school => school.orgNr.toString() === document?.skoleOrgNr)
     const csvData = {
       'Owner ID/Entity Code': '39006',
