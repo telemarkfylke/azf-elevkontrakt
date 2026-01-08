@@ -289,6 +289,7 @@ const generateInvoiceImportFile = async () => {
     } else {
       batchData = csvDataArray
     }
+
     // Create CSV string from data array
     const csvString = await createCsvString(batchData)
     const fileNameForImport = `SO01b_2_Invoice_Base_subledger_import_File_Number_${i + 1}_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
@@ -296,9 +297,20 @@ const generateInvoiceImportFile = async () => {
     fs.writeFileSync(filePath, csvString, 'utf8')
     logger('info', [logPrefix, `CSV file created at ${filePath}`])
 
-    // // Import the file to Xledger
+    // Import the file to Xledger
     try {
       const importResult = await fileImport('SO01b_2', filePath, fileNameForImport)
+      
+      if(importResult.errors) {
+        logger('error', [logPrefix, 'Xledger import returned errors', importResult.errors])
+        return
+      }
+
+      if(importResult.data.addImportFiles.edges.length === 0) {
+        logger('error', [logPrefix, 'Xledger import returned no edges, something went wrong', importResult])
+        return
+      }
+
       logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
     } catch (error) {
       logger('error', [logPrefix, 'Error importing file to Xledger', error])

@@ -101,7 +101,7 @@ const fileImport = async (fileType, pathToFileForImport, fileName) => {
 
   try {
     const result = await queryXledger(request, fileName)
-    return result.data
+    return result
   } catch (error) {
     logger('error', [logPrefix, `Error importing file: ${fileName}`, error])
   }
