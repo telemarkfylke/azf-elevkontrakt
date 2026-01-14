@@ -66,10 +66,17 @@ const updateStudentInfo = async () => {
       const date = new Date()
       date.setDate(date.getDate() - 5)
       if (doc.notFoundInFINT.date < date) {
+        
+        // Get the current rate statuses
+        const rates = []
+        rates.push(doc.fakturaInfo.rate1.status)
+        rates.push(doc.fakturaInfo.rate2.status)
+        rates.push(doc.fakturaInfo.rate3.status)
+
         // If its more than 5 days old, move the document to the history database
         logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 5 days, moving to history database`])
         // Only move the document if the student have returned the pc or bought it out, and have no rates with status "Ikke Fakturert"
-        if ((doc.pcInfo?.returned === 'true' || doc.pcInfo?.boughtOut === 'true') && !doc.rates?.some(rate => rate.status === 'Ikke Fakturert')) {
+        if ((doc.pcInfo?.returned === 'true' || doc.pcInfo?.boughtOut === 'true') && !rates.some(rate => rate === 'Ikke Fakturert')) {
           movedDocuments.push(doc._id)
         } else {
           report.pcNotDeliveredHistoryCountOrRatesNotPaiedCount += 1
