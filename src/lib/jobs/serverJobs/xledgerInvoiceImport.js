@@ -58,7 +58,7 @@ const getXledgerInvoiceImports = async () => {
     'unSignedskjemaInfo.kontraktType': { $in: ['Leieavtale', 'leieavtale'] }, // Only contracts of type 'Leieavtale' or 'leieavtale'
     isImportedToXledger: { $eq: true }, // Already imported to Xledger (this school year, a job will reset this field for all documents at the start of a new school year)
     importedToXledgerAt: { $lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Check that the document import is 7 days older or more
-    'notFoundInFINT.date': { $exists: false }, // Not marked as not found in FINT
+    // 'notFoundInFINT.date': { $exists: false }, // Not marked as not found in FINT (we will handle this in the rate check below, some times FINT said that students are not found, even if they are still students at the school)
     $or: [
       { 'fakturaInfo.rate1.faktureringsår': { $in: [currentSchoolYear, parseInt(currentSchoolYear)] } }, // Find documents where at least one of the rates is the current school year, look for both string and number (incase :P)
       { 'fakturaInfo.rate2.faktureringsår': { $in: [currentSchoolYear, parseInt(currentSchoolYear)] } },
@@ -76,6 +76,18 @@ const getXledgerInvoiceImports = async () => {
       for (let i = 0; i < rates.length; i++) {
         const rate = rates[i]
         if (rate.status === 'Ikke Fakturert' && rate.faktureringsår === currentSchoolYear) {
+          // Check if the student has lless than 5 days leeway from the notFoundInFINT date, to avoid invoicing students that are not found in FINT over a peroid of 5 consecutive days.
+          if (document?.notFoundInFINT && Object.keys(document.notFoundInFINT).length > 0) {
+            const notFoundDates = Object.values(document.notFoundInFINT).map(entry => new Date(entry.date))
+            const hasLeeway = notFoundDates.every(date => {
+              const daysDiff = Math.floor((Date.now() - date) / (1000 * 60 * 60 * 24))
+              return daysDiff < 5
+            })
+            if (!hasLeeway) {
+              logger('info', ['getXledgerInvoiceImports', `Student ID: ${document._id} has notFoundInFINT entry older than 5 days, skipping invoicing.`])
+              continue
+            }
+          }
           rateIndexToBeInvoiced = i
           logger('info', ['getXledgerInvoiceImports', `Rate to be invoiced found for document ID: ${document._id}`])
           break
