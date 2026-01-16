@@ -302,7 +302,7 @@ const createCsvDataArray = async () => {
   // Import the file to Xledger
   try {
     const importResult = await fileImport('SL04-SYS', filePath, fileNameForImport)
-    logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
+    logger('info', [logPrefix, `File imported to Xledger successfully: ${fileNameForImport}`])
   } catch (error) {
     logger('error', [logPrefix, 'Error importing file to Xledger', error])
     return

@@ -77,7 +77,7 @@ const getXledgerInvoiceImports = async () => {
         const rate = rates[i]
         if (rate.status === 'Ikke Fakturert' && rate.faktureringsår === currentSchoolYear) {
           rateIndexToBeInvoiced = i
-          console.log('Found rate to be invoiced:', `fakturaInfo.rate${rateIndexToBeInvoiced + 1}, document ID: ${document._id}`)
+          logger('info', ['getXledgerInvoiceImports', `Rate to be invoiced found for document ID: ${document._id}`])
           break
         }
       }
@@ -306,12 +306,12 @@ const generateInvoiceImportFile = async () => {
         return new Error('Xledger import returned errors')
       }
 
-      if(importResult.data.addImportFiles.edges.length === 0) {
+      if(importResult.data.data.addImportFiles?.edges.length === 0) {
         logger('error', [logPrefix, 'Xledger import returned no edges, something went wrong', importResult])
         return new Error('Xledger import returned no edges')
       }
 
-      logger('info', [logPrefix, `File imported to Xledger with result: ${JSON.stringify(importResult)}`])
+      logger('info', [logPrefix, `File imported to Xledger successfully: ${fileNameForImport}`])
     } catch (error) {
       logger('error', [logPrefix, 'Error importing file to Xledger', error])
       return new Error('Error importing file to Xledger')

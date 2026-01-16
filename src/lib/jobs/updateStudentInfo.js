@@ -76,7 +76,7 @@ const updateStudentInfo = async () => {
         // If its more than 5 days old, move the document to the history database
         logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 5 days, moving to history database`])
         // Only move the document if the student have returned the pc or bought it out, and have no rates with status "Ikke Fakturert"
-        if ((doc.pcInfo?.returned === 'true' || doc.pcInfo?.boughtOut === 'true') && !rates.some(rate => rate === 'Ikke Fakturert')) {
+        if ((doc.pcInfo.returned === 'true' || doc.pcInfo.boughtOut === 'true') && !rates.some(rate => rate === 'Ikke Fakturert')) {
           movedDocuments.push(doc._id)
         } else {
           report.pcNotDeliveredHistoryCountOrRatesNotPaiedCount += 1

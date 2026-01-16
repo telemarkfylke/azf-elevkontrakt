@@ -13,3 +13,17 @@ app.timer('updateStudentInfo', {
     }
   }
 })
+
+app.http('updateStudentInfoDev', {
+  methods: ['GET'],
+  authLevel: 'anonymous',
+  route: 'dev/updateStudentInfo',
+  handler: async (request, context) => {
+    try {
+      const report = await updateStudentInfo()
+      return { status: 200, jsonBody: report }
+    } catch (error) {
+      return { status: 500, jsonBody: { error: 'Failed to update student UPN' } }
+    }
+  }
+})
