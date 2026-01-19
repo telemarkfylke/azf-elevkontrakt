@@ -81,7 +81,7 @@ const getXledgerInvoiceImports = async () => {
             const notFoundDates = Object.values(document.notFoundInFINT).map(entry => new Date(entry.date))
             const hasLeeway = notFoundDates.every(date => {
               const daysDiff = Math.floor((Date.now() - date) / (1000 * 60 * 60 * 24))
-              return daysDiff < 5
+              return daysDiff > 5
             })
             if (!hasLeeway) {
               logger('info', ['getXledgerInvoiceImports', `Student ID: ${document._id} has notFoundInFINT entry older than 5 days, skipping invoicing.`])
