@@ -94,10 +94,18 @@ const updateStudentInfo = async () => {
             //     report.pcNotDeliveredHistoryCount += 1
             // } else {
             await moveAndDeleteDocument(doc._id, 'historic', false)
+            logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to history database`])
             report.historyCount += 1
             // }
           } catch (error) {
             logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
+          }
+        } else if (pcNotDeliveredHistoryCountOrRatesNotPaied.length > 0) {
+          try {
+            await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', false) // Move the document to the historic-pcNotDelivered collection instead
+            logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to historic-pcNotDelivered database`])
+          } catch (error) {
+            logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to historic-pcNotDelivered database`, error])
           }
         } else {
           logger('info', [loggerPrefix, `Document with _id ${doc._id} has not returned the pc or have rates with status "Ikke Fakturert", not moving to history database`])
@@ -107,7 +115,7 @@ const updateStudentInfo = async () => {
   }
 
   logger('info', [loggerPrefix, 'Starting to update student information'])
-  const documents = await getDocuments({}, 'regular')
+  const documents = await getDocuments({"notFoundInFINT.date": {$exists: true}}, 'regular')
   if (documents.result.length === 0) { return report } // If no documents are found, we can return the report
   report.totalNumberOfDocuments = documents.result.length
   for (const doc of documents.result) {
@@ -151,6 +159,11 @@ const updateStudentInfo = async () => {
       } else {
         logger('info', [loggerPrefix, `UPN not found in fintData for document or UPN is an equal match ${doc._id}`])
       }
+      // Since we found the student in FINT, we can reset the notFoundInFINT field if it exists
+      if (doc.notFoundInFINT) {
+        updateData.notFoundInFINT = {} // Reset notFoundInFINT field
+      }
+
       // Find the first active elevforhold and update elevInfo field if it is not a match with the fintData
       let fintElevForhold
       if (Array.isArray(fintData.elevforhold)) {
