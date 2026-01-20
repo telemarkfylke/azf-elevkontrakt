@@ -115,7 +115,7 @@ const updateStudentInfo = async () => {
   }
 
   logger('info', [loggerPrefix, 'Starting to update student information'])
-  const documents = await getDocuments({"notFoundInFINT.date": {$exists: true}}, 'regular')
+  const documents = await getDocuments({}, 'regular')
   if (documents.result.length === 0) { return report } // If no documents are found, we can return the report
   report.totalNumberOfDocuments = documents.result.length
   for (const doc of documents.result) {
