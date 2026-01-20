@@ -236,7 +236,7 @@ const getDocuments = async (query, documentType) => {
  * @param {Boolean} isMock | true | false
  * @returns
  */
-const updateContractPCStatus = async (contract, isMock) => {
+const updateContractPCStatus = async (contract, isMock, targetCollection) => {
   // Fields to update:
   // pcInfo.releasedBy: "innlogget bruker - redigert av administrator"
   // pcInfo.releasedDate: "timestamp"
@@ -296,6 +296,9 @@ const updateContractPCStatus = async (contract, isMock) => {
   if (isMock === true) {
     // Update contract in mock collection
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ _id: new ObjectId(contract.contractID) }, { $set: pcUpdateObject })
+  } else if (targetCollection === 'pcIkkeInnlevert') {
+    // Update contract in collection
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).updateOne({ _id: new ObjectId(contract.contractID) }, { $set: pcUpdateObject })
   } else {
     // Update contract in collection
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ _id: new ObjectId(contract.contractID) }, { $set: pcUpdateObject })
@@ -558,7 +561,7 @@ const moveAndDeleteDocument = async (documentId, targetCollection, isMock, isPre
  *
  * @param {string} documentId
  * @param {object} updateData
- * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings
+ * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings | pcIkkeInnlevert
  * @returns
  */
 const updateDocument = async (documentId, updateData, documentType) => {
@@ -579,9 +582,9 @@ const updateDocument = async (documentId, updateData, documentType) => {
   if (!documentType) {
     logger('error', [logPrefix, 'Mangler documentType'])
     return { status: 400, error: 'Mangler documentType' }
-  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings') {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog eller settings'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog eller settings' }
+  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings' && documentType !== 'pcIkkeInnlevert') {
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings eller pcIkkeInnlevert'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings eller pcIkkeInnlevert' }
   }
 
   // Check what keys are being updated
@@ -604,6 +607,8 @@ const updateDocument = async (documentId, updateData, documentType) => {
   } else if (documentType === 'settings') {
     // Update settings in settings collection
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
+  } else if (documentType === 'pcIkkeInnlevert') {
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
   } else {
     logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport eller regular'])
     return { status: 400, error: 'Ugyldig documentType, må være mock, preImport eller regular' }

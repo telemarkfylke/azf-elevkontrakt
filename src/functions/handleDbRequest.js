@@ -116,6 +116,13 @@ app.http('handleDbRequest', {
             }
           }
         } else if (request.method === 'PUT') {
+          const fetchDocumentsFromTargetCollection = request.headers.get('target-collection') ? request.headers.get('target-collection') : 'regular'
+          // preImport | mock | regular | løpenummer | settings
+          if (fetchDocumentsFromTargetCollection !== 'regular' && fetchDocumentsFromTargetCollection !== 'preImport' && fetchDocumentsFromTargetCollection !== 'mock' && fetchDocumentsFromTargetCollection !== 'løpenummer' && fetchDocumentsFromTargetCollection !== 'settings' && fetchDocumentsFromTargetCollection !== 'history' && fetchDocumentsFromTargetCollection !== 'pcIkkeInnlevert') {
+            logger('error', [`${logPrefix}`, `Invalid target collection specified: ${fetchDocumentsFromTargetCollection}`])
+            return { status: 400, body: 'Bad Request, invalid target collection specified' }
+          }
+
           if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.skoleadministrator-write', 'elevkontrakt.readwrite'])) {
             logger('error', [`${logPrefix} - PUT`, 'Unauthorized access attempt', authorizationHeader])
             return { status: 403, body: 'Forbidden' }
@@ -130,7 +137,7 @@ app.http('handleDbRequest', {
               }
               try {
                 logger('info', [logPrefix, logMsg])
-                const result = await updateContractPCStatus(jsonBody, isMock)
+                const result = await updateContractPCStatus(jsonBody, isMock, fetchDocumentsFromTargetCollection)
                 logger('info', [logPrefix, `Oppdaterte PC status for kontrakt _id: ${jsonBody.contractID}`])
                 return { status: 200, jsonBody: result }
               } catch (error) {
@@ -161,7 +168,7 @@ app.http('handleDbRequest', {
 
               try {
                 logger('info', [logPrefix, `Oppdaterer dokument med kontraktID: ${jsonBody.contractID}`])
-                const result = await updateDocument(jsonBody.contractID, updateData, 'regularWithChangeLog')
+                const result = await updateDocument(jsonBody.contractID, updateData, fetchDocumentsFromTargetCollection === 'pcIkkeInnlevert' ? 'pcIkkeInnlevert' : 'regularWithChangeLog')
                 return { status: 200, jsonBody: result }
               } catch (error) {
                 logger('error', [logPrefix, `Error ved oppdatering av dokument med kontraktID: ${jsonBody.contractID}`, error])
