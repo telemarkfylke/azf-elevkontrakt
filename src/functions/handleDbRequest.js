@@ -18,7 +18,7 @@ app.http('handleDbRequest', {
     if (request.method === 'GET') {
       const fetchDocumentsFromTargetCollection = request.headers.get('target-collection') ? request.headers.get('target-collection') : 'regular'
       // preImport | mock | regular | løpenummer | settings
-      if (fetchDocumentsFromTargetCollection !== 'regular' && fetchDocumentsFromTargetCollection !== 'preImport' && fetchDocumentsFromTargetCollection !== 'mock' && fetchDocumentsFromTargetCollection !== 'løpenummer' && fetchDocumentsFromTargetCollection !== 'settings' && fetchDocumentsFromTargetCollection !== 'history') {
+      if (fetchDocumentsFromTargetCollection !== 'regular' && fetchDocumentsFromTargetCollection !== 'preImport' && fetchDocumentsFromTargetCollection !== 'mock' && fetchDocumentsFromTargetCollection !== 'løpenummer' && fetchDocumentsFromTargetCollection !== 'settings' && fetchDocumentsFromTargetCollection !== 'history' && fetchDocumentsFromTargetCollection !== 'pcIkkeInnlevert') {
         logger('error', [`${logPrefix}`, `Invalid target collection specified: ${fetchDocumentsFromTargetCollection}`])
         return { status: 400, body: 'Bad Request, invalid target collection specified' }
       }

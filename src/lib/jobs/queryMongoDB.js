@@ -181,7 +181,7 @@ const postFormInfo = async (formInfo, isMock) => {
 /**
  *
  * @param {Object} query
- * @param {string} documentType | preImport | mock | regular | løpenummer | settings | history
+ * @param {string} documentType | preImport | mock | regular | løpenummer | settings | history | pcIkkeInnlevert
  * @returns
  */
 const getDocuments = async (query, documentType) => {
@@ -197,7 +197,7 @@ const getDocuments = async (query, documentType) => {
   if (!documentType) {
     logger('error', [logPrefix, 'Mangler documentType'])
     return { status: 400, error: 'Mangler documentType' }
-  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings' && documentType !== 'history') {
+  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings' && documentType !== 'history' && documentType !== 'pcIkkeInnlevert') {
     logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
     return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings' }
   }
@@ -215,9 +215,11 @@ const getDocuments = async (query, documentType) => {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).find(query).toArray()
   } else if (documentType === 'history') {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicCollection}`).find(query).toArray()
+  } else if (documentType === 'pcIkkeInnlevert') {
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).find(query).toArray()
   } else {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings' }
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings eller pcIkkeInnlevert'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings eller pcIkkeInnlevert' }
   }
 
   if (result.length === 0) {
