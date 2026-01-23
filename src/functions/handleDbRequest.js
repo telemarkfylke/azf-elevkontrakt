@@ -200,7 +200,14 @@ app.http('handleDbRequest', {
       if (request.body === null) {
         return { status: 400, body: 'Bad Request, no body provided' }
       } else if (jsonBody.contractID && jsonBody.targetCollection) {
-        const result = await moveAndDeleteDocument(jsonBody.contractID, jsonBody.targetCollection, isMock)
+        /**
+         * If Source is provided and mock === true, then source is mock
+         */
+        let sourceCollection = jsonBody.sourceCollection
+        if(isMock === true) {
+          sourceCollection = 'mock'
+        }
+        const result = await moveAndDeleteDocument(jsonBody.contractID, jsonBody.targetCollection, sourceCollection) // Source MIGHT be isMock
         if (result.status === 200) {
           logger('info', [`${logPrefix} - DELETE`, `Document with ID ${jsonBody.contractID} deleted successfully`])
           return { status: 200, body: `Document with ID ${jsonBody.contractID} deleted successfully` }
