@@ -594,24 +594,57 @@ const updateDocument = async (documentId, updateData, documentType) => {
   const updatedKeys = Object.keys(updateData)
   logger('info', [logPrefix, `Oppdaterer dokument med _id: ${documentId}`, `Oppdaterer felter: ${updatedKeys.join(', ')}`])
 
+  const setData = { ...updateData }
+  const unsetData = setData.$unset
+  delete setData.$unset
+
+  const updateObject = {}
+  if (Object.keys(setData).length > 0) {
+    updateObject.$set = setData
+  }
+  if (unsetData) {
+    updateObject.$unset = unsetData
+  }
+
   let result
   if (documentType === 'mock') {
     // Update contract in mock collection
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData })
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsMockCollection}`).updateOne({ _id: new ObjectId(documentId) }, updateObject)
   } else if (documentType === 'preImport') {
     // Update contract in preImport collection
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData })
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).updateOne({ _id: new ObjectId(documentId) }, updateObject)
   } else if (documentType === 'regularWithChangeLog') {
     // If changeLog is being updated, push new entry to array
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
+    const changeLogUpdateObject = { ...updateObject }
+    if (updateData.data) {
+      changeLogUpdateObject.$set = updateData.data
+    }
+    if (updateData.changeLog) {
+      changeLogUpdateObject.$push = { changeLog: updateData.changeLog }
+    }
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ _id: new ObjectId(documentId) }, changeLogUpdateObject)
   } else if (documentType === 'regular') {
     // Update contract in collection
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData })
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ _id: new ObjectId(documentId) }, updateObject)
   } else if (documentType === 'settings') {
     // Update settings in settings collection
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
+    const settingsUpdateObject = { ...updateObject }
+    if (updateData.data) {
+      settingsUpdateObject.$set = updateData.data
+    }
+    if (updateData.changeLog) {
+      settingsUpdateObject.$push = { changeLog: updateData.changeLog }
+    }
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.settingsCollection}`).updateOne({ _id: new ObjectId(documentId) }, settingsUpdateObject)
   } else if (documentType === 'pcIkkeInnlevert') {
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).updateOne({ _id: new ObjectId(documentId) }, { $set: updateData.data, $push: { changeLog: updateData.changeLog } })
+    const pcUpdateObject = { ...updateObject }
+    if (updateData.data) {
+      pcUpdateObject.$set = updateData.data
+    }
+    if (updateData.changeLog) {
+      pcUpdateObject.$push = { changeLog: updateData.changeLog }
+    }
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).updateOne({ _id: new ObjectId(documentId) }, pcUpdateObject)
   } else {
     logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport eller regular'])
     return { status: 400, error: 'Ugyldig documentType, må være mock, preImport eller regular' }

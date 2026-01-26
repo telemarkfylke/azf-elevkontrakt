@@ -52,15 +52,20 @@ const updateStudentInfo = async () => {
   }
 
   const moveToHistoryDatabase = async (doc, updateData) => {
+    // Create a new update object to avoid conflicts with existing operations
+    const historyUpdateData = {}
+    
     // Check if the field "notFoundInFINT" object exists in the document
     if (!doc.notFoundInFINT?.date) {
       // If it does not exist, create it
-      updateData['notFoundInFINT.date'] = new Date() // Set the date to the current date
-      updateData['notFoundInFINT.message'] = 'Student not found in FINT'
+      historyUpdateData.notFoundInFINT = {
+        date: new Date(), // Set the date to the current date
+        message: 'Student not found in FINT'
+      }
       // Update the document with the new field
       logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT, updating document`])
       updatedDocuments.push(doc._id)
-      await updateDocument(doc._id, updateData, 'regular')
+      await updateDocument(doc._id, historyUpdateData, 'regular')
     } else {
       // Check if the date is more than 5 days old.
       const date = new Date()
@@ -93,7 +98,7 @@ const updateStudentInfo = async () => {
             //     await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', false) // Move the document to the historic-pcNotDelivered collection instead
             //     report.pcNotDeliveredHistoryCount += 1
             // } else {
-            await moveAndDeleteDocument(doc._id, 'historic', false)
+            await moveAndDeleteDocument(doc._id, 'historic', 'regular')
             logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to history database`])
             report.historyCount += 1
             // }
@@ -102,7 +107,7 @@ const updateStudentInfo = async () => {
           }
         } else if (pcNotDeliveredHistoryCountOrRatesNotPaied.length > 0) {
           try {
-            await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', false) // Move the document to the historic-pcNotDelivered collection instead
+            await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', 'regular') // Move the document to the historic-pcNotDelivered collection instead
             logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to historic-pcNotDelivered database`])
           } catch (error) {
             logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to historic-pcNotDelivered database`, error])
@@ -161,7 +166,7 @@ const updateStudentInfo = async () => {
       }
       // Since we found the student in FINT, we can reset the notFoundInFINT field if it exists
       if (doc.notFoundInFINT) {
-        updateData.notFoundInFINT = {} // Reset notFoundInFINT field
+        updateData['$unset'] = { notFoundInFINT: "" } // Remove the notFoundInFINT field completely
       }
 
       // Find the first active elevforhold and update elevInfo field if it is not a match with the fintData
@@ -227,10 +232,18 @@ const updateStudentInfo = async () => {
       if (Object.keys(updateData).length > 0 && fintData.status !== 404 && studentGotElevforhold === true) {
         updatedDocuments.push(doc._id)
         report.updateCount += 1
-        updateData.notFoundInFINT = {} // Reset notFoundInFINT field
         updateData.lastFINTSyncTimeStamp = new Date() // Update the lastFINTSyncTimeStamp to the current date
         logger('info', [loggerPrefix, `Updating document ${doc._id} with new data`])
         await updateDocument(doc._id, updateData, 'regular')
+      } else if (doc.notFoundInFINT && fintData.status !== 404 && studentGotElevforhold === true) {
+        const cleanupUpdateData = {
+          '$unset': { notFoundInFINT: "" },
+          lastFINTSyncTimeStamp: new Date()
+        }
+        updatedDocuments.push(doc._id)
+        report.updateCount += 1
+        logger('info', [loggerPrefix, `Removing notFoundInFINT field for document ${doc._id} as student was found in FINT`])
+        await updateDocument(doc._id, cleanupUpdateData, 'regular')
       } else {
         logger('info', [loggerPrefix, `No updates needed for document ${doc._id}`])
       }
