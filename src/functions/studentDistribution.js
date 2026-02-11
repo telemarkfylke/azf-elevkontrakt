@@ -1,5 +1,6 @@
 const { app } = require('@azure/functions')
 const { getStudentDistributionByEducationProgram, generateDistributionSummary } = require('../lib/jobs/serverJobs/studentDistribution')
+const { logger } = require('@vtfk/logger')
 
 app.http('studentDistribution', {
   methods: ['GET'],
@@ -46,7 +47,7 @@ app.http('studentDistribution', {
       }
       
     } catch (error) {
-      context.log.error('Error in studentDistribution function:', error)
+      logger('error', ['studentDistribution', 'Error generating report:', error])
       return {
         status: 500,
         jsonBody: {
@@ -81,7 +82,7 @@ app.http('studentDistributionCsv', {
       }
       
     } catch (error) {
-      context.log.error('Error in studentDistributionCsv function:', error)
+      logger('error', ['studentDistributionCsv', 'Error generating CSV:', error])
       return {
         status: 500,
         jsonBody: {
@@ -96,19 +97,18 @@ app.http('studentDistributionCsv', {
 /**
  * Convert distribution result to CSV format
  */
-function convertDistributionToCsv(distributionResult) {
+ const convertDistributionToCsv = (distributionResult) => {
   const { distribution } = distributionResult
   
-  // Create CSV header
+  //CSV header
   let csv = 'Program Code,Program Name,Student Count,Student Name,FNR,School,Class,Trinn,Document ID,Reason\n'
   
-  // Add data for each program
   Object.entries(distribution).forEach(([code, data]) => {
     if (data.students.length === 0) {
-      // Add row for empty programs
+      // Row for utdanningsprogram with no students
       csv += `"${code}","${data.name}",0,,,,,,,\n`
     } else {
-      // Add row for each student
+      // Students row for utdanningsprogram
       data.students.forEach(student => {
         csv += `"${code}","${data.name}",${data.count},"${student.navn}","${student.fnr}","${student.skole}","${student.klasse || ''}","${student.trinn || ''}","${student.documentId}","${student.reason || ''}"\n`
       })
