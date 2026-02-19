@@ -44,7 +44,8 @@ module.exports = {
     duplicatesCollection: process.env.MONGODB_DUPLICATES_COLLECTION,
     historicPcNotDeliveredCollection: process.env.MONGODB_HISTORIC_PC_NOT_DELIVERED_COLLECTION,
     serialnumberCollection: process.env.MONGODB_LOPENUMMER_COLLECTION,
-    settingsCollection: process.env.MONGODB_SETTINGS_COLLECTION
+    settingsCollection: process.env.MONGODB_SETTINGS_COLLECTION,
+    productsCollection: process.env.MONGODB_PRODUCTS_COLLECTION
   },
   archive: {
     url: process.env.ARCHIVE_URL,
