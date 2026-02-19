@@ -181,7 +181,7 @@ const postFormInfo = async (formInfo, isMock) => {
 /**
  *
  * @param {Object} query
- * @param {string} documentType | preImport | mock | regular | løpenummer | settings | history | pcIkkeInnlevert
+ * @param {string} documentType | preImport | mock | regular | løpenummer | settings | history | pcIkkeInnlevert | products
  * @returns
  */
 const getDocuments = async (query, documentType) => {
@@ -197,7 +197,7 @@ const getDocuments = async (query, documentType) => {
   if (!documentType) {
     logger('error', [logPrefix, 'Mangler documentType'])
     return { status: 400, error: 'Mangler documentType' }
-  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings' && documentType !== 'history' && documentType !== 'pcIkkeInnlevert') {
+  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings' && documentType !== 'history' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products') {
     logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
     return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings' }
   }
@@ -217,6 +217,10 @@ const getDocuments = async (query, documentType) => {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicCollection}`).find(query).toArray()
   } else if (documentType === 'pcIkkeInnlevert') {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).find(query).toArray()
+  } else if (documentType === 'history') {
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicCollection}`).find(query).toArray()
+  } else if (documentType === 'products') {
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).find(query).toArray()
   } else {
     logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings eller pcIkkeInnlevert'])
     return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings eller pcIkkeInnlevert' }
@@ -501,7 +505,11 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
     // const deletedCollection = isMock ? mongoDB.deletedMockCollection : mongoDB.deletedCollection
 
     if (targetCollection === 'deleted') {
-      collection = isMock ? mongoDB.deletedMockCollection : mongoDB.deletedCollection
+      if(sourceCollection === 'mock') {
+        collection = mongoDB.deletedMockCollection
+      } else {
+        collection = mongoDB.deletedCollection
+      }
     } else if (targetCollection === 'historic') {
       collection = mongoDB.historicCollection
     } else if (targetCollection === 'contracts') {
@@ -564,7 +572,7 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
  *
  * @param {string} documentId
  * @param {object} updateData
- * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings | pcIkkeInnlevert
+ * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings | pcIkkeInnlevert | products
  * @returns
  */
 const updateDocument = async (documentId, updateData, documentType) => {
@@ -585,9 +593,9 @@ const updateDocument = async (documentId, updateData, documentType) => {
   if (!documentType) {
     logger('error', [logPrefix, 'Mangler documentType'])
     return { status: 400, error: 'Mangler documentType' }
-  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings' && documentType !== 'pcIkkeInnlevert') {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings eller pcIkkeInnlevert'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings eller pcIkkeInnlevert' }
+  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products') {
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products' }
   }
 
   // Check what keys are being updated
@@ -645,9 +653,22 @@ const updateDocument = async (documentId, updateData, documentType) => {
       pcUpdateObject.$push = { changeLog: updateData.changeLog }
     }
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).updateOne({ _id: new ObjectId(documentId) }, pcUpdateObject)
+  } else if (documentType === 'products') {
+    const productUpdateObject = { ...updateObject }
+    if(updateData.data) {
+      productUpdateObject.$set = updateData.data
+    }
+    if(updateData.auditLog) {
+      productUpdateObject.$push = { auditLog: updateData.auditLog[updateData.auditLog.length - 1] }
+    }
+    /**
+     * Update av felter: Pris, status, beskrivelse, fungerer. Oppdatering av auditlog fungerer ikke.
+     * Skal vi la brukeren oppdatere navn på produkt? Tenker ja. 
+     */
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).updateOne({ _id: new ObjectId(documentId) }, productUpdateObject)
   } else {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport eller regular'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport eller regular' }
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products' }
   }
 
   return result
@@ -734,6 +755,56 @@ const postInitialSettings = async (settings) => {
   }
 }
 
+const postProduct = async (product) => {
+  const logPrefix = 'postProduct'
+  const mongoClient = await getMongoClient()
+  if (!product) {
+    logger('error', [logPrefix, 'Mangler product'])
+    return { status: 400, error: 'Mangler product' }
+  }
+  try {
+    const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).insertOne(product)
+    if (result.acknowledged !== true) {
+      logger('error', [logPrefix, 'Error ved oppretting av product'])
+      throw new Error('Error ved oppretting av product')
+    }
+    else {
+      logger('info', [logPrefix, 'Product opprettet'])
+      return result
+    }
+  }
+  catch (error) {
+    logger('error', [logPrefix, 'Error poster til db', error])
+    throw new Error('Error poster til db', error)
+  }
+}
+
+const deleteProduct = async (productId) => {
+  const logPrefix = 'deleteProduct'
+  const mongoClient = await getMongoClient()
+  if (!productId) {
+    logger('error', [logPrefix, 'Mangler productId'])
+    return { status: 400, error: 'Mangler productId' }
+  }
+  try {
+    const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).deleteOne({ _id: new ObjectId(productId) })
+    if (result.deletedCount === 0) {
+      logger('info', [logPrefix, 'Ingen produkt slettet'])
+      return { status: 404, error: 'Ingen produkt slettet' }
+    } else {
+      logger('info', [logPrefix, `Slettet ${result.deletedCount} produkt`])
+      return { status: 200, message: `Slettet ${result.deletedCount} produkt` }
+    }
+  } catch (error) {
+    logger('error', [logPrefix, 'Error sletter produkt', error])
+    throw new Error('Error sletter produkt', error)
+  }
+}
+
+const postExtraInvoice = async (invoice, contractId) => {
+
+}
+
 module.exports = {
   postFormInfo,
   updateFormInfo,
@@ -745,5 +816,7 @@ module.exports = {
   postDigitrollContract,
   deleteDocuments,
   postSerialNumber,
-  postInitialSettings
+  postInitialSettings,
+  postProduct,
+  deleteProduct
 }
