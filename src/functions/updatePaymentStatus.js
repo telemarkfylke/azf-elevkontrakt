@@ -10,7 +10,7 @@ app.http('updatePaymentStatusDev', {
   handler: async (request, context) => {
     const upn = request.params.upn
     try {
-      const response = await updatePaymentStatus()
+      const response = await updatePaymentStatus('pcIkkeInnlevert')
       return { status: 200, jsonBody: response }
     } catch (error) {
       logger('error', ['updatePaymentStatus', error])
@@ -26,7 +26,24 @@ app.timer('updatePaymentStatus', {
   handler: async (myTimer, context) => {
     try {
       logger('info', ['updatePaymentStatus', 'Timer trigger function started'])
-      const report = await updatePaymentStatus()
+      const report = await updatePaymentStatus('regular')
+      logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report])
+      return { status: 200, jsonBody: report }
+    } catch (error) {
+      logger('error', ['updatePaymentStatus', error])
+      return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
+    }
+  }
+})
+
+// Bør være timetrigger i prod
+app.timer('updatePaymentStatusPCNotDelivered', {
+  // Once every day at 04:00 AM
+  schedule: '0 4 * * *',
+  handler: async (myTimer, context) => {
+    try {
+      logger('info', ['updatePaymentStatus', 'Timer trigger function started'])
+      const report = await updatePaymentStatus('pcIkkeInnlevert')
       logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report])
       return { status: 200, jsonBody: report }
     } catch (error) {

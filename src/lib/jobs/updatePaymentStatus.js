@@ -46,7 +46,7 @@ function addQueryRate (rateName) {
  *
  * @returns {Object}
  */
-async function fecthContractCandidatesFromMongoDB () {
+async function fecthContractCandidatesFromMongoDB (collection) {
   const query = {
     $or: [
       addQueryRate('rate1'),
@@ -54,7 +54,7 @@ async function fecthContractCandidatesFromMongoDB () {
       addQueryRate('rate3')
     ]
   }
-  return await getDocuments(query, 'regular')
+  return await getDocuments(query, collection)
 }
 
 /**
@@ -83,13 +83,13 @@ function addToSummary (key, summary) {
   summary[key]++
 }
 
-async function updateMongo (documentId, rateKey, status) {
+async function updateMongo (documentId, rateKey, status, collection) {
   const updateData = {}
   updateData['fakturaInfo.' + rateKey + '.status'] = status
   updateData['fakturaInfo.' + rateKey + '.betaltDato'] = new Date().toISOString()
 
   // IKKE uncomment dette før vi VET vi skal i prod
-  await updateDocument(documentId, updateData, 'regular')
+  await updateDocument(documentId, updateData, collection)
 }
 
 /**
@@ -99,12 +99,12 @@ async function updateMongo (documentId, rateKey, status) {
  * @param {Object} summary
  * @returns {number}
  */
-async function updateDictionaryWithResponse (xLedgerRows, ratesDictionary, summary) {
+async function updateDictionaryWithResponse (xLedgerRows, ratesDictionary, summary, collection) {
   xLedgerRows.forEach(async (row) => {
     const dictionaryEntry = ratesDictionary[row.extOrderNumber]
     dictionaryEntry.salesOrders.push(row)
     if (row.status === RateStatus.betalt || row.status === RateStatus.kreditert) {
-      await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, row.status)
+      await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, row.status, collection)
     }
 
     addToSummary(row.status, summary)
@@ -112,9 +112,14 @@ async function updateDictionaryWithResponse (xLedgerRows, ratesDictionary, summa
 }
 
 // For å se om denne raten er en kandidat for å sjekke opp imot xledger
-const updatePaymentStatus = async () => {
+/**
+ * 
+ * @param {String} collection | 'regular' eller 'pcIkkeInnlevert', avhengig av hvilken collection i MongoDB vi skal sjekke opp imot.
+ * @returns 
+ */
+const updatePaymentStatus = async (collection) => {
   try {
-    const documents = await fecthContractCandidatesFromMongoDB()
+    const documents = await fecthContractCandidatesFromMongoDB(collection)
     const targetChunckSize = 400
     let ratesToCheck = []
     let ratesDictionary = {}
@@ -144,7 +149,7 @@ const updatePaymentStatus = async () => {
       // Handle a chunk of invoices
       if (ratesToCheck.length >= targetChunckSize || index === lastIndex) {
         const orderStatusRows = await getOrderStatuses(ratesToCheck)
-        await updateDictionaryWithResponse(orderStatusRows, ratesDictionary, summary)
+        await updateDictionaryWithResponse(orderStatusRows, ratesDictionary, summary, collection)
         ratesToCheck = []
         ratesDictionary = {}
       }
