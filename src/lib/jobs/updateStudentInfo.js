@@ -36,14 +36,14 @@ const updateStudentInfo = async () => {
   const updatedDocuments = []
   const movedDocuments = []
   const studentsWithoutActiveElevforhold = []
-  const pcNotDeliveredHistoryCountOrRatesNotPaied = []
+  const pcNotDeliveredHistoryCountOrRatesNotPaid = []
   // Report object to be returned at the end of the function
   // Also used in the teams message
   const report = {
     totalNumberOfDocuments: 0,
     updateCount: 0,
     historyCount: 0,
-    pcNotDeliveredHistoryCountOrRatesNotPaiedCount: 0, // Count of documents moved to history because pcInfo.released === "false" or pcInfo.released === "true" and pcInfo.returned === "true"
+    pcNotDeliveredHistoryCountOrRatesNotPaidCount: 0, // Count of documents moved to history because pcInfo.released === "false" or pcInfo.released === "true" and pcInfo.returned === "true"
     newStudentsNotFoundInFINTCount: 0, // Count of new students not found in FINT during this run "404 Not Found" - "No student with the provided identificator found in FINT"
     studentsWithoutActiveElevforholdCount: 0, // Count of students found in FINT but without any active elevforhold
     updatedDocuments,
@@ -84,8 +84,8 @@ const updateStudentInfo = async () => {
         if ((doc.pcInfo.returned === 'true' || doc.pcInfo.boughtOut === 'true') && !rates.some(rate => rate === 'Ikke Fakturert')) {
           movedDocuments.push(doc._id)
         } else {
-          report.pcNotDeliveredHistoryCountOrRatesNotPaiedCount += 1
-          pcNotDeliveredHistoryCountOrRatesNotPaied.push(doc._id)
+          report.pcNotDeliveredHistoryCountOrRatesNotPaidCount += 1
+          pcNotDeliveredHistoryCountOrRatesNotPaid.push(doc._id)
         }
         // Move the document to the history database
         if (movedDocuments.length > 0) {
@@ -105,12 +105,12 @@ const updateStudentInfo = async () => {
           } catch (error) {
             logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
           }
-        } else if (pcNotDeliveredHistoryCountOrRatesNotPaied.length > 0) {
+        } else if (pcNotDeliveredHistoryCountOrRatesNotPaid.length > 0) {
           try {
-            await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', 'regular') // Move the document to the historic-pcNotDelivered collection instead
-            logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to historic-pcNotDelivered database`])
+            await moveAndDeleteDocument(doc._id, 'pcIkkeInnlevert', 'regular') // Move the document to the pcIkkeInnlevert collection instead
+            logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to pcIkkeInnlevert database`])
           } catch (error) {
-            logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to historic-pcNotDelivered database`, error])
+            logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to pcIkkeInnlevert database`, error])
           }
         } else {
           logger('info', [loggerPrefix, `Document with _id ${doc._id} has not returned the pc or have rates with status "Ikke Fakturert", not moving to history database`])
@@ -323,7 +323,7 @@ const updateStudentInfo = async () => {
               },
               {
                 type: 'TextBlock',
-                text: `**${report.pcNotDeliveredHistoryCountOrRatesNotPaiedCount}** dokument(er) ble ikke flyttet til historikk-databasen fordi pc ikke er levert tilbake eller har utestående fakturaer`,
+                text: `**${report.pcNotDeliveredHistoryCountOrRatesNotPaidCount}** dokument(er) ble ikke flyttet til historikk-databasen fordi pc ikke er levert tilbake eller har utestående fakturaer`,
                 wrap: true,
                 weight: 'Bolder',
                 size: 'Medium'
