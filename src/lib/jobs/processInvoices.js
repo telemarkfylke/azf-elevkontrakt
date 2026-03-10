@@ -14,7 +14,8 @@ const { generateSerialNumber } = require("../helpers/getSerialNumber")
 
 const generateInvoices = async (body, request) => {
     const logPrefix = 'generateInvoices - processInvoices'
-    let customerContract = await getDocuments({_id: new ObjectId(body.customerId)}, 'regular')
+
+    let customerContract = await getDocuments({_id: new ObjectId(body.customerId)}, body.mainDocumentCollectionSource)
 
     if(customerContract.status !== 200 || customerContract.result.length === 0) {
         logger('error', [`${logPrefix} - ${request.method}`, 'No contract found for the provided customerId'])
@@ -45,7 +46,7 @@ const generateInvoices = async (body, request) => {
                     updateRate[`fakturaInfo.${rateNumberFull}.status`] = 'Fakturert - Utkjøp'
                     updateRate[`fakturaInfo.${rateNumberFull}.løpenummer`] = serialNumber
                     updateRate[`fakturaInfo.${rateNumberFull}.sum`] = buyOutItem.sum
-                    await updateDocument(customerContract._id, updateRate, 'regular')
+                    await updateDocument(customerContract._id, updateRate, body.mainDocumentCollectionSource)
                     rate.løpenummer = serialNumber
                     foundRate = rate
                     break
@@ -68,6 +69,7 @@ const generateInvoices = async (body, request) => {
         buyOutObject = {
             type: 'buyOut',
             customerContractId: customerContract._id,
+            mainDocumentCollectionSource: body.mainDocumentCollectionSource,
             recipient: {
                 ...customerContract.ansvarligInfo
             },
@@ -104,6 +106,7 @@ const generateInvoices = async (body, request) => {
         extraInvoiceObject = {
             type: 'extraInvoice',
             customerContractId: customerContract._id,
+            mainDocumentCollectionSource: body.mainDocumentCollectionSource,
             recipient: {
                 ...customerContract.ansvarligInfo
             },

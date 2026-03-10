@@ -385,7 +385,7 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
           // Find correct rate in the invoce document and update the document
           for (const invoiceDocument of invoiceDocuments) {
             // Update the main contract with updated status
-            await updateDocument(invoiceDocument.customerContractId, updateData, 'regular')
+            await updateDocument(invoiceDocument.customerContractId, updateData, invoiceDocument.mainDocumentCollectionSource)
             logger('info', ['logPrefix - updateImportedDocument', `Updated document with customerContractId: ${invoiceDocument.customerContractId} && _id: ${invoiceDocument._id}`])
 
             // Rate to update is the one that has the same løpenummer as the one in the imported document
