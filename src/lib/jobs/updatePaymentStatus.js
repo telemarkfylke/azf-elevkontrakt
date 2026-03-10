@@ -221,7 +221,7 @@ const updatePaymentStatus = async (collection, type) => {
         /* Her dukker typisk ting som har løpenummer av gammel type (Digitroll) opp. De kommer i databasespørringen, men har løpenummer som ikke starter med "JOT-" */
         addToSummary(ExtendedSummaryStatus.gamleRates, summary)
       } else if (hits > 1) {
-        console.log(`Document with id ${contract._id} has ${hits} rates with løpenummer, which means we will check the same document multiple times. This is not optimal, but we will handle it in the updateDictionaryWithResponse function to avoid updating the same document multiple times.`)
+        logger('info', [`Document with id ${contract._id} has ${hits} rates with løpenummer, which means we will check the same document multiple times. This is not an error, but something to be aware of when looking at the results.`, 'Rates with løpenummer:', Object.entries(contract.fakturaInfo).filter(([key, rate]) => rate.løpenummer && rate.løpenummer.substring(0, 4) === 'JOT-').map(([key, rate]) => ({ [key]: rate }))])
         summary.multiRateHits++
       }
 
