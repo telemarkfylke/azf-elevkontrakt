@@ -32,7 +32,7 @@ const randomString = (l) => {
 
 /**
  * Generates a new serial number based on the provided rate number.
- * @param {*} rateNumber
+ * @param {String | Number} rateNumber 1-3 is the rate number. 4 is for extra invoices.
  * @returns {Promise<String>} - The generated serial number.
  */
 const generateSerialNumber = async (rateNumber) => {
@@ -67,7 +67,6 @@ const generateSerialNumber = async (rateNumber) => {
 
   // Insert the new serial number entry into the database
   await postSerialNumber(serialNumberEntry)
-
   return serialNumber
 }
 

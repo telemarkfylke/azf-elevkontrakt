@@ -181,7 +181,7 @@ const postFormInfo = async (formInfo, isMock) => {
 /**
  *
  * @param {Object} query
- * @param {string} documentType | preImport | mock | regular | løpenummer | settings | history | pcIkkeInnlevert | products
+ * @param {string} documentType | preImport | mock | regular | løpenummer | settings | history | pcIkkeInnlevert | products | invoices
  * @returns
  */
 const getDocuments = async (query, documentType) => {
@@ -197,9 +197,9 @@ const getDocuments = async (query, documentType) => {
   if (!documentType) {
     logger('error', [logPrefix, 'Mangler documentType'])
     return { status: 400, error: 'Mangler documentType' }
-  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings' && documentType !== 'history' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products') {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer eller settings' }
+  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'løpenummer' && documentType !== 'settings' && documentType !== 'history' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products' && documentType !== 'invoices') {
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings, history, pcIkkeInnlevert, products eller invoices'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings, history, pcIkkeInnlevert, products eller invoices' }
   }
 
   let result
@@ -221,9 +221,11 @@ const getDocuments = async (query, documentType) => {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicCollection}`).find(query).toArray()
   } else if (documentType === 'products') {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).find(query).toArray()
+  } else if (documentType === 'invoices') {
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.invoiceCollection}`).find(query).toArray()
   } else {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings eller pcIkkeInnlevert'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings eller pcIkkeInnlevert' }
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings, history, pcIkkeInnlevert, products eller invoices'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, løpenummer, settings, history, pcIkkeInnlevert, products eller invoices' }
   }
 
   if (result.length === 0) {
@@ -572,7 +574,7 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
  *
  * @param {string} documentId
  * @param {object} updateData
- * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings | pcIkkeInnlevert | products
+ * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings | pcIkkeInnlevert | products | invoices
  * @returns
  */
 const updateDocument = async (documentId, updateData, documentType) => {
@@ -593,14 +595,14 @@ const updateDocument = async (documentId, updateData, documentType) => {
   if (!documentType) {
     logger('error', [logPrefix, 'Mangler documentType'])
     return { status: 400, error: 'Mangler documentType' }
-  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products') {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products' }
+  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products' && documentType !== 'invoices') {
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices' }
   }
 
   // Check what keys are being updated
   const updatedKeys = Object.keys(updateData)
-  logger('info', [logPrefix, `Oppdaterer dokument med _id: ${documentId}`, `Oppdaterer felter: ${updatedKeys.join(', ')}`])
+  logger('info', [logPrefix, `Oppdaterer dokument med _id: ${documentId} i collection: ${documentType}`, `Oppdaterer felter: ${updatedKeys.join(', ')}`])
 
   const setData = { ...updateData }
   const unsetData = setData.$unset
@@ -662,13 +664,22 @@ const updateDocument = async (documentId, updateData, documentType) => {
       productUpdateObject.$push = { auditLog: updateData.auditLog[updateData.auditLog.length - 1] }
     }
     /**
-     * Update av felter: Pris, status, beskrivelse, fungerer. Oppdatering av auditlog fungerer ikke.
-     * Skal vi la brukeren oppdatere navn på produkt? Tenker ja. 
-     */
+    * Skal vi la brukeren oppdatere navn på produkt? Tenker ja?
+    */
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).updateOne({ _id: new ObjectId(documentId) }, productUpdateObject)
+  } else if (documentType === 'invoices') {
+    const invoiceUpdateObject = { ...updateObject }
+    if(updateData.data) {
+      invoiceUpdateObject.$set = updateData.data
+    }
+    // Om vi implementerer redigering av fakturaer som ikke er fakturert. 
+    if(updateData.auditLog) {
+      invoiceUpdateObject.$push = { auditLog: updateData.auditLog[updateData.auditLog.length - 1] }
+    }
+    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.invoiceCollection}`).updateOne({ _id: new ObjectId(documentId) }, invoiceUpdateObject)
   } else {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert eller products' }
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices' }
   }
 
   return result
@@ -801,8 +812,28 @@ const deleteProduct = async (productId) => {
   }
 }
 
-const postExtraInvoice = async (invoice, contractId) => {
-
+const postExtraInvoice = async (invoice) => {
+  const logPrefix = 'postExtraInvoice'
+  const mongoClient = await getMongoClient()
+  if (!invoice) {
+    logger('error', [logPrefix, 'Mangler invoice'])
+    return { status: 400, error: 'Mangler invoice' }
+  }
+  try {
+    const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.invoiceCollection}`).insertOne(invoice)
+    if (result.acknowledged !== true) {
+      logger('error', [logPrefix, 'Error ved oppretting av invoice'])
+      throw new Error('Error ved oppretting av invoice')
+    }
+    else {
+      logger('info', [logPrefix, 'Extra invoice opprettet'])
+      return result
+    }
+  }
+  catch (error) {
+    logger('error', [logPrefix, 'Error poster til db', error])
+    throw new Error('Error poster til db', error)
+  }
 }
 
 module.exports = {
@@ -818,5 +849,6 @@ module.exports = {
   postSerialNumber,
   postInitialSettings,
   postProduct,
-  deleteProduct
+  deleteProduct,
+  postExtraInvoice
 }

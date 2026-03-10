@@ -8,6 +8,10 @@ const { schoolInfoList } = require('../../datasources/tfk-schools.js')
 const axios = require('axios')
 const { teams } = require('../../../../config.js')
 const { fileImport } = require('../queryXledger.js')
+const { returnCorrectPriceForStudent } = require('../../helpers/getCorrectRatePrice.js')
+const { hasInvoiceFlowException } = require('../../helpers/checkInvoiceFlowException.js')
+const { getThisYearsPriceList } = require('../../helpers/getSettings.js')
+const { ObjectId } = require('mongodb')
 
 /**
  * This job is responsible for importing invoices into Xledger.
@@ -17,11 +21,6 @@ const { fileImport } = require('../queryXledger.js')
  * The job will return a message indicating how many invoices were imported and how many documents were updated.
  * The job will also return two files: The CSV file that is going to be imported into Xledger and a CSV file for manual review (if any).
  */
-
-const getThisYearsPriceList = async () => {
-  const settings = await getDocuments({}, 'settings')
-  return { prices: settings.result[0].prices, exceptionsFromRegularPrices: settings.result[0].exceptionsFromRegularPrices, exceptionsFromInvoiceFlow: settings.result[0].exceptionsFromInvoiceFlow } || {}
-}
 
 /**
  * Fetches the user and generates the payload needed for the invoice import.
@@ -108,7 +107,12 @@ const getXledgerInvoiceImports = async () => {
     throw error
   }
 }
-
+/**
+ * Returns an array of CSV data objects based on the documents to be invoiced.
+ * Each object in the array represents a row in the CSV file to be imported into Xledger.
+ * Only for normal invoices, buyOut and extra invoices will have different formats and are implemented in separate functions.
+ * @returns {Promise<Array>} - An array of CSV data objects.
+ */
 const createCsvDataArray = async () => {
   const { documents } = await getXledgerInvoiceImports()
 
@@ -118,39 +122,6 @@ const createCsvDataArray = async () => {
   }
 
   const { prices, exceptionsFromRegularPrices, exceptionsFromInvoiceFlow } = await getThisYearsPriceList()
-
-  // Function to determine the correct price for a student
-  const returnCorrectPriceForStudent = (fnr, studentClass, prices, exceptionsFromRegularPrices) => {
-    // If there are no exceptions found in the settings, return the regular price
-    if (exceptionsFromRegularPrices.students.length === 0 && exceptionsFromRegularPrices.classes.length === 0) {
-      return prices.regularPrice
-    }
-
-    if (exceptionsFromRegularPrices.students.length > 0) {
-      // Check if the student is in the exceptions list
-      const studentException = exceptionsFromRegularPrices.students.find(student => student.fnr === fnr)
-      if (studentException) {
-        return prices.reducedPrice
-      }
-    }
-
-    if (exceptionsFromRegularPrices.classes.length > 0) {
-      // Check if the student is in the class exceptions list
-      const classException = exceptionsFromRegularPrices.classes.find(cls => cls.className === studentClass)
-      if (classException) {
-        return prices.reducedPrice
-      }
-    }
-
-    // If no exceptions found on the student, return regular price
-    return prices.regularPrice
-  }
-
-  // Function to check if a student has an exception in the invoice flow
-  const hasInvoiceFlowException = (fnr, exceptionsFromInvoiceFlow) => {
-    const exception = exceptionsFromInvoiceFlow.students.find(entry => entry.fnr === fnr)
-    return !!exception
-  }
   // documents.splice(10) // Limit to first 10 documents for testing
 
   const csvDataArray = []
@@ -163,7 +134,7 @@ const createCsvDataArray = async () => {
       continue // Skip this document
     }
 
-    const schoolInfo = schoolInfoList.find(school => school.orgNr.toString() === document?.skoleOrgNr)
+    const schoolInfo = schoolInfoList.find(school => school.orgNr === document?.skoleOrgNr)
     const csvData = {
       'Owner ID/Entity Code': '39006',
       ImpSystem: 'Skoleutvikling - JOTNE',
@@ -223,9 +194,9 @@ const createCsvString = async (csvData) => {
 /**
  *
  * @param {Object} message | { updateCount, notFoundCount, updateCountOldFile, notFoundCountOldFile }
- * @param {string} type | 'utlevering' | 'innlevering'
+ * @param {string} type | The type of invoice import (buyOut, extraInvoice, normalInvoice)
  */
-const sendTeamsMessage = async (message) => {
+const sendTeamsMessage = async (message, type) => {
   const { updateCount, failedToUpdate } = message
   const teamsMsg = {
     type: 'message',
@@ -241,13 +212,13 @@ const sendTeamsMessage = async (message) => {
           body: [
             {
               type: 'TextBlock',
-              text: 'Statusrapport - azf-elevkontrakt - Fakturaimport til Xledger',
+              text: `Statusrapport - azf-elevkontrakt - ${type} fakturaimport til Xledger`,
               wrap: true,
               style: 'heading'
             },
             {
               type: 'TextBlock',
-              text: `**${updateCount}** dokument(er) er merket som 'Fakturert' i databasen etter vellykket fakturaimport til Xledger.`,
+              text: `**${updateCount}** dokument(er) er merket som 'Fakturert' i databasen etter vellykket ${type} fakturaimport til Xledger.`,
               wrap: true,
               weight: 'Bolder',
               size: 'Medium'
@@ -277,12 +248,66 @@ const sendTeamsMessage = async (message) => {
   const postStatus = await axios.post(teams.webhook, teamsMsg, { headers })
   return postStatus
 }
+/**
+ * 
+ * @param {String} customerContractId | The ID of the customer contract to find the invoice document for
+ * @param {String} type | [buyOut, extraInvoice]
+ * @returns | The invoice document(s) that match the criteria, or an empty array if no document is found
+ */
+const findInvoiceDocument = async (document, type) => {
 
-const generateInvoiceImportFile = async () => {
+  let customerContractId = document.Dummy4
+  let løpenummer = document['Order No']
+
+  let invoiceResult
+  // Check invoice type [buyOut, extraInvoice] and return the correct one based on the type
+  if(type === 'buyOut') {
+
+    const query = { 
+      type: 'buyOut', 
+      rates: { $elemMatch: { status: 'Ikke Fakturert', løpenummer: løpenummer } }
+    }
+
+    invoiceResult = await getDocuments(query, 'invoices')
+  } else if (type === 'extraInvoice') {
+    const query = { 
+      type: 'extraInvoice', 
+      status: 'Ikke Fakturert',
+    }
+
+    invoiceResult = await getDocuments(query, 'invoices')
+  }
+
+  if(invoiceResult.status !== 200 || invoiceResult.result.length === 0) {
+    logger('error', [`findInvoiceDocument - ${type}`, `No invoice document found for customerContractId: ${customerContractId} and løpenummer: ${løpenummer}`])
+    return []
+  } else {
+    return invoiceResult.result
+  }
+}
+
+const generateInvoiceImportFile = async (importType, csvDataArray) => {
   const logPrefix = 'generateInvoiceImportFile'
   logger('info', [logPrefix, 'Starting invoice import file generation job'])
-  // Create CSV data array
-  const csvDataArray = await createCsvDataArray()
+
+  if (importType === 'buyOut') {
+    logger('info', [logPrefix, 'Import type: buyOut'])
+  } else if (importType === 'extraInvoice') {
+    logger('info', [logPrefix, 'Import type: extraInvoice'])
+  } else if (importType === 'normalInvoice') {
+    logger('info', [logPrefix, 'Import type: normalInvoice'])
+  } else {
+    logger('error', [logPrefix, 'Invalid import type provided. Must be either "buyOut", "extraInvoice", or "normalInvoice".'])
+    throw new Error('Invalid import type provided. Must be either "buyOut", "extraInvoice", or "normalInvoice".')
+  }
+  if(importType === 'normalInvoice') {
+    // Create CSV data array for normal invoices
+    csvDataArray = await createCsvDataArray()
+  } else if (importType === 'buyOut') {
+    csvDataArray = csvDataArray 
+  } else if (importType === 'extraInvoice') {
+    csvDataArray = csvDataArray
+  }
   if (csvDataArray.length === 0) {
     logger('info', ['logPrefix', 'No data to create CSV file for invoice import'])
     return { message: 'No data to create CSV file for invoice import' }
@@ -304,7 +329,7 @@ const generateInvoiceImportFile = async () => {
 
     // Create CSV string from data array
     const csvString = await createCsvString(batchData)
-    const fileNameForImport = `SO01b_2_Invoice_Base_subledger_import_File_Number_${i + 1}_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}.csv`
+    const fileNameForImport = `SO01b_2_Invoice_Base_subledger_import_File_Number_${i + 1}_${new Date().getDate()}_${new Date().getMonth() + 1}_${new Date().getFullYear()}_${importType}.csv`
     const filePath = `./src/data/xledger_files/faktura_files/${fileNameForImport}`
     fs.writeFileSync(filePath, csvString, 'utf8')
     logger('info', [logPrefix, `CSV file created at ${filePath}`])
@@ -312,21 +337,21 @@ const generateInvoiceImportFile = async () => {
     // Import the file to Xledger
     try {
       const importResult = await fileImport('SO01b_2', filePath, fileNameForImport)
-
-      if(importResult.errors) {
-        logger('error', [logPrefix, 'Xledger import returned errors', importResult.errors])
-        return new Error('Xledger import returned errors')
+      
+      if(importResult.data.errors) {
+        logger('error', [logPrefix, 'Xledger import returned errors', importResult.data.errors])
+        throw new Error('Xledger import returned errors')
       }
 
       if(importResult.data.data.addImportFiles?.edges.length === 0) {
         logger('error', [logPrefix, 'Xledger import returned no edges, something went wrong', importResult])
-        return new Error('Xledger import returned no edges')
+        throw new Error('Xledger import returned no edges')
       }
 
       logger('info', [logPrefix, `File imported to Xledger successfully: ${fileNameForImport}`])
     } catch (error) {
       logger('error', [logPrefix, 'Error importing file to Xledger', error])
-      return new Error('Error importing file to Xledger')
+      throw new Error('Error importing file to Xledger')
     }
 
     // After importing, move the file to the finished folder
@@ -335,9 +360,10 @@ const generateInvoiceImportFile = async () => {
     logger('info', [logPrefix, `CSV file moved to finished folder at ${finishedFilePath}`])
 
     // Write back to the database that the documents have been invoiced
-
+    let lastExtraInvoiceOrderNo = null
     for (const document of batchData) {
       try {
+
         // Get rate from the 'Order No' field
         const rateNumber = parseInt(document['Order No'].split('-')[2], 10) // JOT-000000001-2-2025-ptc9lm
         const updateData = {
@@ -346,16 +372,89 @@ const generateInvoiceImportFile = async () => {
           [`fakturaInfo.rate${rateNumber}.løpenummer`]: document['Order No'],
           [`fakturaInfo.rate${rateNumber}.sum`]: document['Unit Price']
         }
-        await updateDocument(document.Dummy4, updateData, 'regular')
-        logger('info', ['logPrefix - updateImportedDocument', `Updated document with _id: ${document.Dummy4} as imported to Xledger`])
+
+        if(importType === 'normalInvoice') {
+          await updateDocument(document.Dummy4, updateData, 'regular')
+          logger('info', ['logPrefix - updateImportedDocument', `Updated document with _id: ${document.Dummy4}`])
+        } else if (importType === 'buyOut') {
+          const invoiceDocuments = await findInvoiceDocument(document, 'buyOut')
+          if(invoiceDocuments.length === 0) {
+            logger('error', ['updateImportedDocument', `No invoice document found for main contract with _id: ${document.Dummy4} and løpenummer: ${document['Order No']}. Skipping updating the invoice document.`])
+            continue
+          }
+          // Find correct rate in the invoce document and update the document
+          for (const invoiceDocument of invoiceDocuments) {
+            // Update the main contract with updated status
+            await updateDocument(invoiceDocument.customerContractId, updateData, 'regular')
+            logger('info', ['logPrefix - updateImportedDocument', `Updated document with customerContractId: ${invoiceDocument.customerContractId} && _id: ${invoiceDocument._id}`])
+
+            // Rate to update is the one that has the same løpenummer as the one in the imported document
+            const rateToUpdate = invoiceDocument.rates.find(rate => rate.løpenummer === document['Order No'])
+            if (!rateToUpdate) {
+              logger('error', ['logPrefix - updateImportedDocument', `No rate found with løpenummer: ${document['Order No']} in invoice document with _id: ${invoiceDocument._id}. Skipping updating this invoice document.`])
+              continue
+            }
+
+            // Replace the updateData keys to match the rate number in the invoice document
+            const rateIndex = invoiceDocument.rates.indexOf(rateToUpdate) + 1
+            const updatedRateData = {
+              status: 'Fakturert',
+              [`itemsFromCart.${rateIndex - 1}.status`]: 'Fakturert',
+              [`itemsFromCart.${rateIndex - 1}.faktureringsDato`]: new Date().toISOString(),
+              [`itemsFromCart.${rateIndex - 1}.løpenummer`]: document['Order No'],
+              [`rates.${rateIndex - 1}.status`]: 'Fakturert',
+              [`rates.${rateIndex - 1}.faktureringsDato`]: new Date().toISOString(),
+            }
+                       
+            await updateDocument(invoiceDocument._id, updatedRateData, 'invoices')
+            logger('info', ['logPrefix - updateImportedDocument', `Updated buyOut document with _id: ${invoiceDocument._id} as imported to Xledger`])
+          }
+
+        } else if (importType === 'extraInvoice') {
+          // To avoid handling the same document multiple times (For products, where one invoice has the same "Order No" for multiple lines), we will check if the document has already been updated before trying to update it again. If the document has already been updated, we will skip it.
+          // We'll check this by checking if the last "Order No" processed is the same as the current "Order No", if it is the same, we will skip the update for this document.
+          if (lastExtraInvoiceOrderNo === document['Order No']) {
+            logger('info', ['logPrefix - updateImportedDocument', `Document with _id: ${document.Dummy4} has the same "Order No" as the last processed document. Skipping updating this document to avoid handling the same document multiple times.`])
+            continue
+          }
+          logger('info', ['logPrefix - updateImportedDocument', `Updating extraInvoice document with customerContractId: ${document.Dummy4}`])
+
+          const invoiceDocuments = await findInvoiceDocument(document, 'extraInvoice')
+          if(invoiceDocuments.length === 0) {
+            logger('error', ['updateImportedDocument', `No invoice document found for main contract with _id: ${document.Dummy4} and løpenummer: ${document['Order No']}. Skipping updating the invoice document.`])
+            continue
+          }
+
+          const updateExtraInvpoiceData = {
+            status: 'Fakturert',
+            faktureringsDato: new Date().toISOString(),
+            løpenummer: document['Order No'],
+          }
+
+          await updateDocument(document.Dummy4, updateExtraInvpoiceData, 'invoices')
+
+          // Save the last "Order No" processed.
+          lastExtraInvoiceOrderNo = document['Order No']
+          
+          logger('info', ['logPrefix - updateImportedDocument', `Updated document with _id: ${document.Dummy4}`])
+        }
       } catch (error) {
         failedToUpdate.push(document.Dummy4)
-        logger('error', ['logPrefix - updateImportedDocument', `Error updating document with _id: ${document.Dummy4} as imported to Xledger`, error])
+        logger('error', ['logPrefix - updateImportedDocument', `Error updating document with _id: ${document.Dummy4}`, error])
       }
     }
   }
-
-  await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, 'invoiceImport')
+  // After processing all batches, send a message to teams with the results of the import and update process (One for each import type)
+  if(importType === 'normalInvoice') {
+    logger('info', [logPrefix, `Invoice import completed. ${csvDataArray.length} invoices imported and marked as 'Fakturert' in the database.`])
+    await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, `normalInvoice`)
+  } else if (importType === 'buyOut') {
+    logger('info', [logPrefix, `BuyOut invoice import completed. ${csvDataArray.length} invoices imported and marked as 'Fakturert' in the database.`])
+    await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, `buyOut`)
+  } else if (importType === 'extraInvoice') {
+    logger('info', [logPrefix, `Extra invoice import completed. ${csvDataArray.length} invoices imported and marked as 'Fakturert' in the database.`])
+    await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, `extraInvoice`)
+  }
 
   return { csvDataArray }
 }

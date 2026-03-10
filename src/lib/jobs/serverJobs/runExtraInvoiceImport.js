@@ -1,14 +1,16 @@
+
 (async () => {
   require('dotenv').config()
   const { logger } = require('@vtfk/logger')
-  const { generateInvoiceImportFile } = require('./xledgerInvoiceImport')
+  const { processInvoices } = require('./xledgerExtraInvoice')
+
 
   logger('info', ['Starting generateInvoiceImportFile job'])
 
-  const statusInvoice = await generateInvoiceImportFile('normalInvoice', [])
+  const statusInvoice = await processInvoices()
 
-  if (statusInvoice?.csvDataArray) {
-    logger('info', [`Finished generateInvoiceImportFile job for invoices. Number of invoices imported: ${statusInvoice.csvDataArray.length}`])
+  if (statusInvoice?.extraInvoiceResults) {
+    logger('info', [`Finished generateInvoiceImportFile job for invoices. Number of extra invoices imported: ${statusInvoice?.extraInvoiceResults?.csvDataArray.length} & Number of buyOut invoices imported: ${statusInvoice?.buyOutResults?.csvDataArray.length}`])
   } else if (statusInvoice?.errors) {
     logger('error', ['Error response from Xledger:', statusInvoice])
   } else if (!statusInvoice) {
