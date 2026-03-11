@@ -24,7 +24,7 @@ const schoolInfoList = [
     primaryLocation: 'Hjalmar Johansen videregående skole',
     xledgerInvoiceCustomString: '415',
     xledgerInvoiceHeaderInfo: 'Spørsmål vedrørende faktura, ta kontakt med Hjalmar Johansen vgs',
-    xledgerSchoolProductNumber: '4151001'
+    xledgerSchoolProductNumber: '4151003'
   },
   {
     orgNr: 994309153,
