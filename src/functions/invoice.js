@@ -19,7 +19,7 @@ app.http('invoiceSend', {
          */
 
         // Validate the authorization header
-        if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+        if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.billing-readwrite'])) {
             logger('error', [`${logPrefix} - ${request.method}`, 'Unauthorized access attempt'])
             return { status: 403, body: 'Forbidden' }
         }
@@ -49,7 +49,7 @@ app.http('invoice', {
         const authorizationHeader = request.headers.get('authorization')
 
         // Validate the authorization header
-        if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+        if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.billing-readwrite'])) {
             logger('error', [`${logPrefix} - ${request.method}`, 'Unauthorized access attempt'])
             return { status: 403, body: 'Forbidden' }
         }
