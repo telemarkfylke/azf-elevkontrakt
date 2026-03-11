@@ -12,13 +12,20 @@ app.http('settings', {
     const authorizationHeader = request.headers.get('authorization')
 
     // Validate the authorization header
-    if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+    if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.billing-readwrite'])) {
       logger('error', [`${logPrefix} - ${request.method}`, 'Unauthorized access attempt'])
       return { status: 403, body: 'Forbidden' }
     }
 
     // Check the request method
     if (request.method === 'GET') {
+
+       // Validate the authorization header
+      if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.billing-readwrite'])) {
+        logger('error', [`${logPrefix} - ${request.method}`, 'Unauthorized access attempt'])
+        return { status: 403, body: 'Forbidden' }
+      }
+
       logger('info', [`${logPrefix} - ${request.method} request received`])
       // Handle GET request
       try {
@@ -51,6 +58,13 @@ app.http('settings', {
         return { status: 500, body: 'Internal Server Error' }
       }
     } else if (request.method === 'PUT') {
+
+      // Validate the authorization header
+      if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+        logger('error', [`${logPrefix} - ${request.method}`, 'Unauthorized access attempt'])
+        return { status: 403, body: 'Forbidden' }
+      }
+
       logger('info', [`${logPrefix} - ${request.method} request received`])
       // Handle PUT request
       try {
