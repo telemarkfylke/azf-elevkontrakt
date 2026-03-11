@@ -68,11 +68,24 @@ const handleBuyOutInvoice = async (invoices) => {
  */
 const handleExtraInvoice = async (invoices) => {
     const csvDataArray = []
+    const standardFields = ['_id', 'name', 'price', 'description', 'active', 'metadata', 'auditLog']
 
     for (const invoice of invoices) {
         const schoolInfo = schoolInfoList.find(school => school.orgNr === invoice?.skoleOrgNr)
         const serialNumber = await generateSerialNumber(4) // Generate serial number for the invoice, can be used in the description or something to easier find the invoice in Xledger after import
         for (const [i, product] of invoice.itemsFromCart.entries()) {
+            const extraFields = {}
+            for (const key in product) {
+                if (!standardFields.includes(key)) {
+                    extraFields[key] = product[key]
+                    extraFields[key]
+                }
+            }
+
+            // Build the text string for the "Tekst (imp)" field. 
+            const extraFieldsText = Object.entries(extraFields).map(([key, value]) => `${key}: ${value}`).join(' - ')
+
+
             const csvData = {
                 'Owner ID/Entity Code': '39006',
                 ImpSystem: 'Skoleutvikling - JOTNE',
@@ -81,7 +94,7 @@ const handleExtraInvoice = async (invoices) => {
                 // 'Date': new Date().toLocaleDateString('no-NO'), // Xledger will set the date automatically to the date of import
                 'Ready To Invoice': '1', // Sett to manual review in Xledger before sending the invoice
                 Product: schoolInfo.xledgerSchoolProductNumber, // Product code for the school,
-                'Tekst (imp)': `Faktura for ${invoice.student.navn} - ${product.name}`, // Description text for the invoice line
+                'Tekst (imp)': `Faktura for ${invoice.student.navn} - ${product.name} - ${extraFieldsText}`, // Description text for the invoice line
                 Quantity: '1',
                 'Unit Price': product.price.toString(), // Price based on the product price in the cart
                 'Company No': invoice.recipient.fnr, // Person that will be invoiced
