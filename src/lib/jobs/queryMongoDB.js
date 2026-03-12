@@ -657,15 +657,16 @@ const updateDocument = async (documentId, updateData, documentType) => {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).updateOne({ _id: new ObjectId(documentId) }, pcUpdateObject)
   } else if (documentType === 'products') {
     const productUpdateObject = { ...updateObject }
+    if(updateData.$unset) {
+      productUpdateObject.$unset = updateData.$unset
+    }
     if(updateData.data) {
       productUpdateObject.$set = updateData.data
     }
     if(updateData.auditLog) {
       productUpdateObject.$push = { auditLog: updateData.auditLog[updateData.auditLog.length - 1] }
     }
-    /**
-    * Skal vi la brukeren oppdatere navn på produkt? Tenker ja?
-    */
+
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).updateOne({ _id: new ObjectId(documentId) }, productUpdateObject)
   } else if (documentType === 'invoices') {
     const invoiceUpdateObject = { ...updateObject }

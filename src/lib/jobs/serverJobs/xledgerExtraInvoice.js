@@ -15,6 +15,7 @@ const { getDocuments, updateDocument } = require("../queryMongoDB")
 const { getThisYearsPriceList } = require("../../helpers/getSettings")
 const { generateInvoiceImportFile } = require("./xledgerInvoiceImport")
 const { generateSerialNumber } = require("../../helpers/getSerialNumber")
+const { standardFields } = require("../../datasources/productStandardFields")
 
 /**
  * 
@@ -68,7 +69,6 @@ const handleBuyOutInvoice = async (invoices) => {
  */
 const handleExtraInvoice = async (invoices) => {
     const csvDataArray = []
-    const standardFields = ['_id', 'name', 'price', 'description', 'active', 'metadata', 'auditLog']
 
     for (const invoice of invoices) {
         const schoolInfo = schoolInfoList.find(school => school.orgNr === invoice?.skoleOrgNr)
