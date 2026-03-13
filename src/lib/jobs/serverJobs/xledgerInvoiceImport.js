@@ -141,7 +141,7 @@ const createCsvDataArray = async () => {
       'Order No': await generateSerialNumber(rateToBeInvoiced.rateNumber), // Serial number for the invoice
       'Line No': '1',
       // 'Date': new Date().toLocaleDateString('no-NO'), // Xledger will set the date automatically to the date of import
-      'Ready To Invoice': '1', // Sett tu manual review in Xledger before sending the invoice
+      'Ready To Invoice': '1', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 0 means ready to be invoiced without review)
       Product: '4651000', // Product code for "ElevPC",
       'Tekst (imp)': `Faktura for ${document.elevInfo.navn} - Leie av elev-PC`, // Description text for the invoice line
       Quantity: '1',
@@ -262,7 +262,6 @@ const findInvoiceDocument = async (document, type) => {
   let invoiceResult
   // Check invoice type [buyOut, extraInvoice] and return the correct one based on the type
   if(type === 'buyOut') {
-
     const query = { 
       type: 'buyOut', 
       rates: { $elemMatch: { status: 'Ikke Fakturert', løpenummer: løpenummer } }

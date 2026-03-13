@@ -5,6 +5,7 @@ const { ObjectId } = require('mongodb');
 const { logger } = require('@vtfk/logger');
 const { generateSerialNumber } = require('../lib/helpers/getSerialNumber');
 const { generateInvoices } = require('../lib/jobs/processInvoices');
+const { getInvoices } = require('../lib/helpers/getInvoices');
 
 app.http('invoiceSend', {
     methods: ['POST'],
@@ -49,11 +50,13 @@ app.http('invoice', {
         const authorizationHeader = request.headers.get('authorization')
 
         // Validate the authorization header
-        if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.billing-readwrite'])) {
+        if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.billing-readwrite', 'elevkontrakt.billing-read'])) {
             logger('error', [`${logPrefix} - ${request.method}`, 'Unauthorized access attempt'])
             return { status: 403, body: 'Forbidden' }
         }
 
-        return { status: 200, body: 'Invoice endpoint is up and running, not implemented yet :P' }
+        const invoiceResult = await getInvoices(request)
+
+        return { status: invoiceResult.status, jsonBody: invoiceResult.jsonBody }
     }
 });
