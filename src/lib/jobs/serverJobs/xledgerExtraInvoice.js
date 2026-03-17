@@ -35,7 +35,7 @@ const handleBuyOutInvoice = async (invoices) => {
           logger('error', ['createCsvDataArray', `Document with _id: ${invoice._id} has an exception in the invoice flow. Skipping invoice import.`])
           continue // Skip this document
         }
-        const schoolInfo = schoolInfoList.find(school => school.orgNr === invoice?.skoleOrgNr)
+        const schoolInfo = schoolInfoList.find(school => school.orgNr === parseInt(invoice?.skoleOrgNr))
         for (const [i, rate] of invoice.rates.entries()) {
             const csvData = {
                 'Owner ID/Entity Code': '39006',
@@ -60,7 +60,6 @@ const handleBuyOutInvoice = async (invoices) => {
             csvDataArray.push(csvData)
         }
     }
-
    return await generateInvoiceImportFile('buyOut', csvDataArray)
 }
 /**
@@ -71,7 +70,7 @@ const handleExtraInvoice = async (invoices) => {
     const csvDataArray = []
 
     for (const invoice of invoices) {
-        const schoolInfo = schoolInfoList.find(school => school.orgNr === invoice?.skoleOrgNr)
+        const schoolInfo = schoolInfoList.find(school => school.orgNr === parseInt(invoice?.skoleOrgNr))
         const serialNumber = await generateSerialNumber(4) // Generate serial number for the invoice, can be used in the description or something to easier find the invoice in Xledger after import
         for (const [i, product] of invoice.itemsFromCart.entries()) {
             const extraFields = {}
@@ -109,7 +108,6 @@ const handleExtraInvoice = async (invoices) => {
             csvDataArray.push(csvData)
         }
     }
-
    return await generateInvoiceImportFile('extraInvoice', csvDataArray)
 }
 
