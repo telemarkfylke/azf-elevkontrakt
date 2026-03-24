@@ -43,7 +43,7 @@ const handleBuyOutInvoice = async (invoices) => {
                 'Order No': rate.løpenummer, // Serial number for the invoice
                 'Line No': (i+1).toString(), // Line number for the invoice line, starting from 1
                 // 'Date': new Date().toLocaleDateString('no-NO'), // Xledger will set the date automatically to the date of import
-                'Ready To Invoice': '0', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 0 means ready to be invoiced without review)
+                'Ready To Invoice': '1', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 0 means ready to be invoiced without review)
                 Product: '4651000', // Product code for "ElevPC",
                 'Tekst (imp)': `Faktura for ${invoice.student.navn} - Utkjøp av elev-PC`, // Description text for the invoice line
                 Quantity: '1',
@@ -91,7 +91,7 @@ const handleExtraInvoice = async (invoices) => {
                 'Order No': serialNumber, // Serial number for the invoice
                 'Line No': (i+1).toString(), // Line number for the invoice line, starting from 1
                 // 'Date': new Date().toLocaleDateString('no-NO'), // Xledger will set the date automatically to the date of import
-                'Ready To Invoice': '0', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 0 means ready to be invoiced without review)
+                'Ready To Invoice': '1', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 0 means ready to be invoiced without review)
                 Product: schoolInfo.xledgerSchoolProductNumber, // Product code for the school,
                 'Tekst (imp)': `Faktura for ${invoice.student.navn} - ${product.name} - ${extraFieldsText}`, // Description text for the invoice line
                 Quantity: '1',
