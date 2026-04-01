@@ -68,13 +68,13 @@ const getXledgerInvoiceImports = async () => {
     const documents = await getDocuments(query, 'regular')
     const noRateToInvoice = []
     // For each document find the correct rate to be invoiced. The rate to be invoiced is the first rate that has status "Ikke Fakturert" and is in the current school year.
-    const currentSchoolYear = getSchoolyear().split('-')[0] // E.g., "2024/2025" -> "2024"
+    const currentSchoolYear = getSchoolyear().split('-')[0].toString() // E.g., "2024/2025" -> "2024"
     documents.result = documents.result.map(document => {
       const rates = document.fakturaInfo ? Object.values(document.fakturaInfo) : []
       let rateIndexToBeInvoiced = null
       for (let i = 0; i < rates.length; i++) {
         const rate = rates[i]
-        if (rate.status === 'Ikke Fakturert' && rate.faktureringsår === currentSchoolYear) {
+        if (rate.status === 'Ikke Fakturert' && rate.faktureringsår.toString() === currentSchoolYear) {
           // Check if the student has lless than 5 days leeway from the notFoundInFINT date, to avoid invoicing students that are not found in FINT over a peroid of 5 consecutive days.
           if (document?.notFoundInFINT && Object.keys(document.notFoundInFINT).length > 0) {
             const notFoundDates = Object.values(document.notFoundInFINT).map(entry => new Date(entry.date))
