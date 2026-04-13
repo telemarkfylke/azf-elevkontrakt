@@ -1,6 +1,6 @@
 const { logger } = require("@vtfk/logger")
-const { getDocuments } = require("../jobs/queryMongoDB")
-const { getUser } = require("../jobs/queryMSGraph")
+const { getDocuments, deleteExtraInvoice } = require("./queryMongoDB")
+const { getUser } = require("./queryMSGraph")
 const { validateRoles } = require("../auth/validateRoles")
 
 const schoolEnums = Object.freeze({
@@ -66,7 +66,23 @@ const getInvoices = async (request) => {
     }
     return { status: 200, jsonBody: invoiceResult.result }
 }
+/**
+ * 
+ * @param {String} invoiceId 
+ * @returns {Object} Result object with status and message
+ */
+const deleteInvoice = async (invoiceId) => {
+    const logPrefix = 'deleteInvoice'
+    if(!invoiceId) {
+        logger('error', [`${logPrefix} - deleteInvoice`, 'No invoiceId provided'])
+        return { status: 400, body: 'Bad Request: No invoiceId provided' }
+    }
+
+    const deleteResult = await deleteExtraInvoice(invoiceId)
+    return deleteResult
+}
 
 module.exports = {
-    getInvoices
+    getInvoices,
+    deleteInvoice
 }

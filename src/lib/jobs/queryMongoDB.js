@@ -837,6 +837,29 @@ const postExtraInvoice = async (invoice) => {
   }
 }
 
+const deleteExtraInvoice = async (invoiceId) => {
+  const logPrefix = 'deleteInvoice'
+  const mongoClient = await getMongoClient()
+  if (!invoiceId) {
+    logger('error', [logPrefix, 'Mangler invoiceId'])
+    return { status: 400, error: 'Mangler invoiceId' }
+  }
+  console.log('deleteExtraInvoice - invoiceId:', invoiceId)
+  try {
+    const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.invoiceCollection}`).deleteOne({ _id: new ObjectId(invoiceId) })
+    if (result.deletedCount === 0) {
+      logger('info', [logPrefix, 'Ingen invoice slettet'])
+      return { status: 404, error: 'Ingen invoice slettet' }
+    } else {
+      logger('info', [logPrefix, `Slettet ${result.deletedCount} invoice`])
+      return { status: 200, message: `Slettet ${result.deletedCount} invoice` }
+    }
+  } catch (error) {
+    logger('error', [logPrefix, 'Error sletter invoice', error])
+    throw new Error('Error sletter invoice', error)
+  }
+}
+
 module.exports = {
   postFormInfo,
   updateFormInfo,
@@ -851,5 +874,6 @@ module.exports = {
   postInitialSettings,
   postProduct,
   deleteProduct,
-  postExtraInvoice
+  postExtraInvoice,
+  deleteExtraInvoice
 }

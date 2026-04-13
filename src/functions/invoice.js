@@ -1,11 +1,8 @@
 const { app } = require('@azure/functions');
 const { validateRoles } = require('../lib/auth/validateRoles');
-const { getDocuments, updateDocument, postExtraInvoice } = require('../lib/jobs/queryMongoDB');
-const { ObjectId } = require('mongodb');
 const { logger } = require('@vtfk/logger');
-const { generateSerialNumber } = require('../lib/helpers/getSerialNumber');
 const { generateInvoices } = require('../lib/jobs/processInvoices');
-const { getInvoices } = require('../lib/helpers/getInvoices');
+const { getInvoices, deleteInvoice } = require('../lib/jobs/handleInvoiceActions');
 
 app.http('invoiceSend', {
     methods: ['POST'],
@@ -56,6 +53,32 @@ app.http('invoice', {
         }
 
         const invoiceResult = await getInvoices(request)
+
+        return { status: invoiceResult.status, jsonBody: invoiceResult.jsonBody }
+    }
+});
+
+app.http('invoiceDelete', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'invoice',
+    handler: async (request, context) => {
+        const logPrefix = 'invoice - delete'
+        const authorizationHeader = request.headers.get('authorization')
+        const invoiceId = request.query.get('invoiceId')
+
+        // Validate the authorization header
+        if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite', 'elevkontrakt.billing-readwrite', 'elevkontrakt.billing-read'])) {
+            logger('error', [`${logPrefix} - ${request.method}`, 'Unauthorized access attempt'])
+            return { status: 403, body: 'Forbidden' }
+        }
+
+        if(!invoiceId) {
+            logger('error', [`${logPrefix} - ${request.method}`, 'No invoiceId query parameter provided'])
+            return { status: 400, body: 'Bad Request: No invoiceId query parameter provided' }
+        }
+        console.log('Deleting invoice with id:', invoiceId)
+        const invoiceResult = await deleteInvoice(invoiceId)
 
         return { status: invoiceResult.status, jsonBody: invoiceResult.jsonBody }
     }
