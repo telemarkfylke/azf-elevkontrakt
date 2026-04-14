@@ -152,6 +152,26 @@ async function updateDictionaryWithResponse (xLedgerRows, ratesDictionary, summa
       if (row.status === RateStatus.betalt || row.status === RateStatus.kreditert) {
         await updateMongo(dictionaryEntry.contract._id, dictionaryEntry.rateKey, row.status, collection, type)
       }
+      if(type === 'buyOut') {
+        // Check if all rates for this contract is paid (status "Betalt" or Kreditert). And update the main status of the contract. 
+        const allRatesPaidOrCredited = dictionaryEntry.contract.rates.every(rate => {
+          const correspondingSalesOrder = dictionaryEntry.salesOrders.find(salesOrder => salesOrder.extOrderNumber === rate.løpenummer)
+          return correspondingSalesOrder && (correspondingSalesOrder.status === RateStatus.betalt || correspondingSalesOrder.status === RateStatus.kreditert)
+        })
+
+        const allRatesCredited = dictionaryEntry.contract.rates.every(rate => {
+          const correspondingSalesOrder = dictionaryEntry.salesOrders.find(salesOrder => salesOrder.extOrderNumber === rate.løpenummer)
+          return correspondingSalesOrder && correspondingSalesOrder.status === RateStatus.kreditert
+        })
+  
+        if(allRatesPaidOrCredited) {
+          await updateMongo(dictionaryEntry.contract._id, null, RateStatus.betalt, collection, type)
+        }
+        if(allRatesCredited) {
+          await updateMongo(dictionaryEntry.contract._id, null, RateStatus.kreditert, collection, type)
+        }
+      }
+      
       addToSummary(row.status, summary)
     })
   }
@@ -221,7 +241,11 @@ const updatePaymentStatus = async (collection, type) => {
         /* Her dukker typisk ting som har løpenummer av gammel type (Digitroll) opp. De kommer i databasespørringen, men har løpenummer som ikke starter med "JOT-" */
         addToSummary(ExtendedSummaryStatus.gamleRates, summary)
       } else if (hits > 1) {
-        logger('info', [`Document with id ${contract._id} has ${hits} rates with løpenummer, which means we will check the same document multiple times. This is not an error, but something to be aware of when looking at the results.`, 'Rates with løpenummer:', Object.entries(contract.fakturaInfo).filter(([key, rate]) => rate.løpenummer && rate.løpenummer.substring(0, 4) === 'JOT-').map(([key, rate]) => ({ [key]: rate }))])
+        if(collection === 'regular' || collection === 'pcIkkeInnlevert') {
+          logger('info', [`Document with id ${contract._id} has ${hits} rates with løpenummer, which means we will check the same document multiple times. This is not an error, but something to be aware of when looking at the results.`, 'Rates with løpenummer:', Object.entries(contract.fakturaInfo).filter(([key, rate]) => rate.løpenummer && rate.løpenummer.substring(0, 4) === 'JOT-').map(([key, rate]) => ({ [key]: rate }))])
+        } else {
+          logger('info', [`Document with id ${contract._id} has ${hits} rates with løpenummer, which means we will check the same document multiple times. This is not an error, but something to be aware of when looking at the results.`, 'Rates with løpenummer:', contract.rates.filter(rate => rate.løpenummer && rate.løpenummer.substring(0, 4) === 'JOT-').map((rate, i) => ({ ['rate' + (i + 1)]: rate }))])
+        }
         summary.multiRateHits++
       }
 

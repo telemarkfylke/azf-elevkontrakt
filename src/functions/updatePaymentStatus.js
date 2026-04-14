@@ -52,34 +52,34 @@ app.timer('updatePaymentStatusPCNotDelivered', {
 })
 
 
-// app.timer('updatePaymentStatusExtraInvoice', {
-//   // Once every day at 04:15 AM
-//   schedule: '0 15 4 * * *',
-//   handler: async (myTimer, context) => {
-//     try {
-//       logger('info', ['updatePaymentStatus', 'Timer trigger function started'])
-//       const report = await updatePaymentStatus('invoices', 'extraInvoice')
-//       logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report])
-//       return { status: 200, jsonBody: report }
-//     } catch (error) {
-//       logger('error', ['updatePaymentStatus', error])
-//       return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
-//     }
-//   }
-// })
+app.timer('updatePaymentStatusExtraInvoice', {
+  // Once every day at 04:15 AM
+  schedule: '0 15 4 * * *',
+  handler: async (myTimer, context) => {
+    try {
+      logger('info', ['updatePaymentStatus', 'Timer trigger function started'])
+      const report = await updatePaymentStatus('invoices', 'extraInvoice')
+      logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report])
+      return { status: 200, jsonBody: report }
+    } catch (error) {
+      logger('error', ['updatePaymentStatus', error])
+      return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
+    }
+  }
+})
 
-// app.timer('updatePaymentStatusBuyOut', {
-//   // Once every day at 04:30 AM
-//   schedule: '0 30 4 * * *',
-//   handler: async (myTimer, context) => {
-//     try {
-//       logger('info', ['updatePaymentStatus', 'Timer trigger function started'])
-//       const report = await updatePaymentStatus('invoices', 'buyOut')
-//       logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report])
-//       return { status: 200, jsonBody: report }
-//     } catch (error) {
-//       logger('error', ['updatePaymentStatus', error])
-//       return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
-//     }
-//   }
-// })
+app.timer('updatePaymentStatusBuyOut', {
+  // Once every day at 04:30 AM
+  schedule: '0 30 4 * * *',
+  handler: async (myTimer, context) => {
+    try {
+      logger('info', ['updatePaymentStatus', 'Timer trigger function started'])
+      const report = await updatePaymentStatus('invoices', 'buyOut')
+      logger('info', ['updatePaymentStatus', 'Timer trigger function completed, report:', report])
+      return { status: 200, jsonBody: report }
+    } catch (error) {
+      logger('error', ['updatePaymentStatus', error])
+      return { status: 500, jsonBody: { error: 'Failed to update payment status' } }
+    }
+  }
+})
