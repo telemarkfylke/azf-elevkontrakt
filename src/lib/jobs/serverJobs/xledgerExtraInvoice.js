@@ -45,7 +45,7 @@ const handleBuyOutInvoice = async (invoices) => {
                 // 'Date': new Date().toLocaleDateString('no-NO'), // Xledger will set the date automatically to the date of import
                 'Ready To Invoice': '1', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 0 means ready to be invoiced without review)
                 Product: '4651000', // Product code for "ElevPC",
-                'Tekst (imp)': `Faktura for ${invoice.student.navn} - Utkjøp av elev-PC`, // Description text for the invoice line
+                'Tekst (imp)': `Faktura for ${invoice.student.navn} - Utkjøp av elev-PC - Faktura ${i+1}/${invoice.rates.length}`, // Description text for the invoice line
                 Quantity: '1',
                 'Unit Price': returnCorrectPriceForStudent(invoice.student.fnr, invoice.student.klasse, prices, exceptionsFromRegularPrices), // Price based on settings and exceptions
                 'Company No': invoice.recipient.fnr, // Person that will be invoiced

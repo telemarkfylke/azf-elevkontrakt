@@ -57,6 +57,7 @@ async function fecthContractCandidatesFromMongoDB (collection, type) {
         addQueryRate('rate3')
       ]
     }
+    logger('info', ['fetchContractCandidatesFromMongoDB', 'Fetching contract candidates from MongoDB', collection])
     return await getDocuments(query, collection)
   }
 
@@ -67,6 +68,7 @@ async function fecthContractCandidatesFromMongoDB (collection, type) {
         $elemMatch: { status: { $not: { $in: [RateStatus.betalt, RateStatus.utlaan, RateStatus.ikkeBetale, RateStatus.kreditert] } }, 
         løpenummer: { $not: { $in: [RateStatus.ukjent, null] } } } }
     }
+    logger('info', ['fetchContractCandidatesFromMongoDB', 'Fetching contract candidates from MongoDB', collection + ' with type ' + type])
     return await getDocuments(query, collection)
   }
 
@@ -76,6 +78,7 @@ async function fecthContractCandidatesFromMongoDB (collection, type) {
       status: { $not: { $in: [RateStatus.betalt, RateStatus.utlaan, RateStatus.ikkeBetale, RateStatus.kreditert] } }, 
       løpenummer: { $not: { $in: [RateStatus.ukjent, null] } }
     }
+    logger('info', ['fetchContractCandidatesFromMongoDB', 'Fetching contract candidates from MongoDB', collection + ' with type ' + type])
     return await getDocuments(query, collection)
   }
 }
