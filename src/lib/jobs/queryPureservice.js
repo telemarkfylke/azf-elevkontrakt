@@ -93,4 +93,43 @@ const getAllStudents = async () => {
   return students
 }
 
-module.exports = { getAllStudents }
+/**
+ * Updates an existing Pureservice user record.
+ * @param {number} pusId - Pureservice user ID
+ * @param {object} payload - PusUserInput fields to update (e.g. { department, cf_1 })
+ */
+const patchUser = async (pusId, payload) => {
+  const logPrefix = 'queryPureservice - patchUser'
+  const url = `${pureservice.url}/agent/api/user/${pusId}`
+  let depth = 1
+
+  while (true) {
+    try {
+      await axios.patch(url, payload, {
+        headers: {
+          Accept: '*/*',
+          'Content-Type': 'application/json',
+          'X-Authorization-Key': pureservice.key
+        },
+        timeout: REQUEST_TIMEOUT_MS
+      })
+      return
+    } catch (err) {
+      if (err.response?.status === 429) {
+        if (depth >= CALL_DEPTH) {
+          logger('error', [logPrefix, `Rate limited: giving up after ${depth} attempts for user ${pusId}`])
+          throw new Error('Too many request attempts to Pureservice')
+        }
+        const retryAfter = err.response.headers['retry-after']
+        const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : SLEEP_TIME_BASE_MS
+        logger('warn', [logPrefix, `Rate limited (depth ${depth}), sleeping ${waitMs / 1000}s before retry`])
+        await sleep(waitMs)
+        depth++
+      } else {
+        throw err
+      }
+    }
+  }
+}
+
+module.exports = { getAllStudents, patchUser }

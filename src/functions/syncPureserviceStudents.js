@@ -1,7 +1,7 @@
 const { app } = require('@azure/functions')
 const { syncPureserviceStudents } = require('../lib/jobs/syncPureserviceStudents')
 
-app.timer('syncPureserviceStudents-regular', {
+app.timer('syncPureserviceStudentsRegular', {
   // Once every day at 07:00 AM
   schedule: '0 7 * * *',
   handler: async (myTimer, context) => {
@@ -14,7 +14,7 @@ app.timer('syncPureserviceStudents-regular', {
   }
 })
 
-app.timer('syncPureserviceStudents-pc-ikke-levert', {
+app.timer('syncPureserviceStudentsPcIkkeLevert', {
   // Once every day at 07:15 AM
   schedule: '15 7 * * *',
   handler: async (myTimer, context) => {

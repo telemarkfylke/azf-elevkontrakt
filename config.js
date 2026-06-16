@@ -48,6 +48,10 @@ module.exports = {
     productsCollection: process.env.MONGODB_PRODUCTS_COLLECTION,
     invoiceCollection: process.env.MONGODB_INVOICE_COLLECTION
   },
+  pureservice: {
+    url: process.env.PUS_URL,
+    key: process.env.PUS_KEY
+  },
   archive: {
     url: process.env.ARCHIVE_URL,
     scope: process.env.ARCHIVE_SCOPE
@@ -60,5 +64,17 @@ module.exports = {
     to: process.env.EMAIL_TO ? process.env.EMAIL_TO.split(',') : [],
     xFunctionsKey: process.env.EMAIL_API_KEY,
     url: process.env.EMAIL_API_URL
+  },
+  changeStream: {
+    storageConnectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
+    tokenBlobContainer: process.env.CHANGE_STREAM_TOKEN_BLOB_CONTAINER || `change-stream-state-${process.env.NODE_ENV || 'dev'}`,
+    tokenBlobName: process.env.CHANGE_STREAM_TOKEN_BLOB_NAME || `resume-token-${process.env.NODE_ENV || 'dev'}.json`,
+    dlqName: process.env.CHANGE_STREAM_DLQ_NAME || `change-stream-dlq-${process.env.NODE_ENV || 'dev'}`,
+    listeningWindowMs: 27 * 60 * 1000,
+    // JSON array of { collection, fields, includeInserts, includeDeletes }.
+    // Use dot notation for nested fields ("student.firstName").
+    // Caveat: $set on a parent object ("student") records "student" as the key, not child paths —
+    // add the parent key to fields too if that pattern occurs in your write path.
+    watchCollections: JSON.parse(process.env.CHANGE_STREAM_WATCH_COLLECTIONS || '[]')
   }
 }
