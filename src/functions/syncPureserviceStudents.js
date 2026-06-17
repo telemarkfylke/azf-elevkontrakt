@@ -19,7 +19,7 @@ app.timer('syncPureserviceStudentsPcIkkeLevert', {
   schedule: '15 7 * * *',
   handler: async (myTimer, context) => {
     try {
-      const report = await syncPureserviceStudents('historiske-avtaler-pc-ikke-innlevert')
+      const report = await syncPureserviceStudents('pcIkkeInnlevert')
       return { status: 200, jsonBody: report }
     } catch (error) {
       return { status: 500, jsonBody: { error: 'Failed to sync Pureservice students' } }
@@ -33,7 +33,7 @@ app.http('syncPureserviceStudentsDev', {
   route: 'dev/syncPureserviceStudents',
   handler: async (request, context) => {
     try {
-      const report = await syncPureserviceStudents('regular')
+      const report = await syncPureserviceStudents('pcIkkeInnlevert')
       return { status: 200, jsonBody: report }
     } catch (error) {
       return { status: 500, jsonBody: { error: 'Failed to sync Pureservice students' } }
