@@ -26,7 +26,7 @@ const { sendEmail } = require('../postEmail.js')
 */
 const getXledgerUserImportDocuments = async () => {
   const query = {
-    'unSignedskjemaInfo.kontraktType': { $in: ['Leieavtale', 'leieavtale'] }, // Only contracts of type 'Leieavtale' or 'leieavtale'
+    'unSignedskjemaInfo.kontraktType': { $in: ['Leieavtale', 'leieavtale', 'låneavtale', 'Låneavtale'] }, // Only contracts of type 'Leieavtale' or 'leieavtale'
     isImportedToXledger: { $ne: true } // Not yet imported to Xledger (this school year, a job will reset this field for all documents at the start of a new school year)
   }
   try {
