@@ -5,6 +5,7 @@ const { getMongoClient } = require('../auth/mongoClient.js')
 const { mongoDB } = require('../../../config')
 // const { getSchoolyear } = require("../helpers/getSchoolyear")
 const { fillDocument, fillManualDocument } = require('../documentSchema.js')
+const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo } = require('./contractChecks.js')
 const { ObjectId } = require('mongodb')
 
 const updateFormInfo = async (formInfo) => {
@@ -160,6 +161,25 @@ const postFormInfo = async (formInfo, isMock) => {
     mongoDBCollection = `${mongoDB.contractsCollection}`
     mongoDBErrorCollection = `${mongoDB.errorCollection}`
   }
+  // Sjekk for duplikater og historisk fakturaInfo (hoppes over for mock-data og feildokumenter)
+  if (isMock !== true && document.isError !== 'true' && document.isNonFixAbleError !== 'true') {
+    const fnr = document.elevInfo?.fnr
+    const kontraktType = document.unSignedskjemaInfo?.kontraktType
+    if (fnr && kontraktType) {
+      const isDuplicate = await checkIsDuplicate(fnr, kontraktType, mongoClient)
+      if (isDuplicate) {
+        logger('info', [logPrefix, 'Duplikat funnet, poster til duplicates-collection', `fnr: ${fnr}`, `kontraktType: ${kontraktType}`])
+        await mongoClient.db(mongoDB.dbName).collection(mongoDB.duplicatesCollection).insertOne(document)
+        return { status: 409, message: 'Duplikat funnet, kontrakt lagt til duplicates-collection', document }
+      }
+      const historicalContract = await findLatestHistoricalContract(fnr, mongoClient)
+      if (historicalContract) {
+        logger('info', [logPrefix, 'Historisk kontrakt funnet, kopierer fakturaInfo til ny kontrakt', `fnr: ${fnr}`])
+        document = applyHistoricalFakturaInfo(document, historicalContract)
+      }
+    }
+  }
+
   // Poster dokument til riktig collection
   try {
     let result
@@ -375,7 +395,26 @@ const postManualContract = async (contract, archiveData, isMock) => {
     }
   }
   // Fyll ut dokumentet med data
-  const document = fillManualDocument(contract, archiveData, elevData, ansvarligData)
+  let document = fillManualDocument(contract, archiveData, elevData, ansvarligData)
+
+  // Sjekk for duplikater og historisk fakturaInfo (hoppes over for mock-data)
+  if (isMock !== true) {
+    const fnr = document.elevInfo?.fnr
+    const kontraktType = document.unSignedskjemaInfo?.kontraktType
+    if (fnr && kontraktType) {
+      const isDuplicate = await checkIsDuplicate(fnr, kontraktType, mongoClient)
+      if (isDuplicate) {
+        logger('info', ['postManualContract', 'Duplikat funnet, poster til duplicates-collection', `fnr: ${fnr}`, `kontraktType: ${kontraktType}`])
+        await mongoClient.db(mongoDB.dbName).collection(mongoDB.duplicatesCollection).insertOne(document)
+        return { result: null, document, isDuplicate: true }
+      }
+      const historicalContract = await findLatestHistoricalContract(fnr, mongoClient)
+      if (historicalContract) {
+        logger('info', ['postManualContract', 'Historisk kontrakt funnet, kopierer fakturaInfo til ny kontrakt', `fnr: ${fnr}`])
+        document = applyHistoricalFakturaInfo(document, historicalContract)
+      }
+    }
+  }
 
   let result
   try {
