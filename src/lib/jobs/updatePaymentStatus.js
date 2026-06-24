@@ -122,10 +122,15 @@ async function updateMongo (documentId, rateKey, status, collection, type) {
   if(collection === 'invoices' && type === 'buyOut') {
     const updateData = {}
 
-    updateData['itemsFromCart.' + rateKey + '.status'] = status
-    updateData['itemsFromCart.' + rateKey + '.betaltDato'] = new Date().toISOString()
-    updateData['rates.' + rateKey + '.status'] = status
-    updateData['rates.' + rateKey + '.betaltDato'] = new Date().toISOString()
+    if (rateKey === null) {
+      updateData['status'] = status
+      updateData['betaltDato'] = new Date().toISOString()
+    } else {
+      updateData['itemsFromCart.' + rateKey + '.status'] = status
+      updateData['itemsFromCart.' + rateKey + '.betaltDato'] = new Date().toISOString()
+      updateData['rates.' + rateKey + '.status'] = status
+      updateData['rates.' + rateKey + '.betaltDato'] = new Date().toISOString()
+    }
 
     await updateDocument(documentId, updateData, collection)
   }
@@ -202,6 +207,7 @@ const updatePaymentStatus = async (collection, type) => {
     const targetChunckSize = 400
     let ratesToCheck = []
     let ratesDictionary = {}
+    let contractSalesOrdersMap = {}
     const summary = {
       'Totalt antall i database': documents.result.length,
       multiRateHits: 0
@@ -227,7 +233,9 @@ const updatePaymentStatus = async (collection, type) => {
           if (checkRateCandidacy(rate)) {
             hits++
             ratesToCheck.push(rate.løpenummer)
-            ratesDictionary[rate.løpenummer] = { rate, contract, rateKey: i, salesOrders: [] }
+            const contractId = contract._id.toString()
+            if (!contractSalesOrdersMap[contractId]) contractSalesOrdersMap[contractId] = []
+            ratesDictionary[rate.løpenummer] = { rate, contract, rateKey: i, salesOrders: contractSalesOrdersMap[contractId] }
           }
         }
       }
@@ -258,6 +266,7 @@ const updatePaymentStatus = async (collection, type) => {
         await updateDictionaryWithResponse(orderStatusRows, ratesDictionary, summary, collection, type)
         ratesToCheck = []
         ratesDictionary = {}
+        contractSalesOrdersMap = {}
       }
       /*
       // We need to handle the leftover items to...

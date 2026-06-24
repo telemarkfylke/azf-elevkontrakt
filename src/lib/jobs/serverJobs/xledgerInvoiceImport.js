@@ -262,9 +262,9 @@ const findInvoiceDocument = async (document, type) => {
   let invoiceResult
   // Check invoice type [buyOut, extraInvoice] and return the correct one based on the type
   if(type === 'buyOut') {
-    const query = { 
-      type: 'buyOut', 
-      rates: { $elemMatch: { status: 'Ikke Fakturert', løpenummer: løpenummer } }
+    const query = {
+      _id: new ObjectId(customerContractId), // customerContractId = document.Dummy4 = invoice _id
+      type: 'buyOut'
     }
 
     invoiceResult = await getDocuments(query, 'invoices')
@@ -378,24 +378,26 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
         } else if (importType === 'buyOut') {
           const invoiceDocuments = await findInvoiceDocument(document, 'buyOut')
           if(invoiceDocuments.length === 0) {
-            logger('error', ['updateImportedDocument', `No invoice document found for main contract with _id: ${document.Dummy4} and løpenummer: ${document['Order No']}. Skipping updating the invoice document.`])
+            logger('error', ['updateImportedDocument', `No invoice document found for invoice with _id: ${document.Dummy4} and løpenummer: ${document['Order No']}. Skipping updating the invoice document.`])
             continue
           }
-          // Find correct rate in the invoce document and update the document
           for (const invoiceDocument of invoiceDocuments) {
-            // Update the main contract with updated status
-            await updateDocument(invoiceDocument.customerContractId, updateData, invoiceDocument.mainDocumentCollectionSource)
-            logger('info', ['logPrefix - updateImportedDocument', `Updated document with customerContractId: ${invoiceDocument.customerContractId} && _id: ${invoiceDocument._id}`])
-
-            // Rate to update is the one that has the same løpenummer as the one in the imported document
+            // Find the rate FIRST before updating anything — avoids partial updates if the rate is missing
             const rateToUpdate = invoiceDocument.rates.find(rate => rate.løpenummer === document['Order No'])
             if (!rateToUpdate) {
               logger('error', ['logPrefix - updateImportedDocument', `No rate found with løpenummer: ${document['Order No']} in invoice document with _id: ${invoiceDocument._id}. Skipping updating this invoice document.`])
               continue
             }
-
-            // Replace the updateData keys to match the rate number in the invoice document
             const rateIndex = invoiceDocument.rates.indexOf(rateToUpdate) + 1
+
+            // Update the main contract — use 'Fakturert - Utkjøp' to preserve the buyOut-specific status
+            const buyOutContractUpdateData = {
+              ...updateData,
+              [`fakturaInfo.rate${rateNumber}.status`]: 'Fakturert - Utkjøp'
+            }
+            await updateDocument(invoiceDocument.customerContractId, buyOutContractUpdateData, invoiceDocument.mainDocumentCollectionSource)
+            logger('info', ['logPrefix - updateImportedDocument', `Updated document with customerContractId: ${invoiceDocument.customerContractId} && _id: ${invoiceDocument._id}`])
+
             const updatedRateData = {
               status: 'Fakturert',
               [`itemsFromCart.${rateIndex - 1}.status`]: 'Fakturert',
@@ -404,7 +406,6 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
               [`rates.${rateIndex - 1}.status`]: 'Fakturert',
               [`rates.${rateIndex - 1}.faktureringsDato`]: new Date().toISOString(),
             }
-                       
             await updateDocument(invoiceDocument._id, updatedRateData, 'invoices')
             logger('info', ['logPrefix - updateImportedDocument', `Updated buyOut document with _id: ${invoiceDocument._id} as imported to Xledger`])
           }

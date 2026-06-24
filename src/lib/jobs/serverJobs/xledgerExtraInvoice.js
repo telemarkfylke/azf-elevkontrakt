@@ -23,19 +23,27 @@ const { standardFields } = require("../../datasources/productStandardFields")
  */
 
 
-const handleBuyOutInvoice = async (invoices) => {
+const handleBuyOutInvoice = async (invoices, deps = {}) => {
+    const {
+        getThisYearsPriceList: _getThisYearsPriceList = getThisYearsPriceList,
+        hasInvoiceFlowException: _hasInvoiceFlowException = hasInvoiceFlowException,
+        schoolInfoList: _schoolInfoList = schoolInfoList,
+        returnCorrectPriceForStudent: _returnCorrectPriceForStudent = returnCorrectPriceForStudent,
+        generateInvoiceImportFile: _generateInvoiceImportFile = generateInvoiceImportFile,
+        logger: _logger = logger,
+    } = deps
 
     const csvDataArray = []
-    const { prices, exceptionsFromRegularPrices, exceptionsFromInvoiceFlow } = await getThisYearsPriceList()
+    const { prices, exceptionsFromRegularPrices, exceptionsFromInvoiceFlow } = await _getThisYearsPriceList()
 
     for (const invoice of invoices) {
-        const hasException = hasInvoiceFlowException(invoice.student.fnr, exceptionsFromInvoiceFlow)
+        const hasException = _hasInvoiceFlowException(invoice.student.fnr, exceptionsFromInvoiceFlow)
         if (hasException) {
           // Using Error for easy notification to teams, so we know why we are skipping this document, and as a reminder to remove the exception later/manually handle the invoice
-          logger('error', ['createCsvDataArray', `Document with _id: ${invoice._id} has an exception in the invoice flow. Skipping invoice import.`])
+          _logger('error', ['createCsvDataArray', `Document with _id: ${invoice._id} has an exception in the invoice flow. Skipping invoice import.`])
           continue // Skip this document
         }
-        const schoolInfo = schoolInfoList.find(school => school.orgNr === parseInt(invoice?.skoleOrgNr))
+        const schoolInfo = _schoolInfoList.find(school => school.orgNr === parseInt(invoice?.skoleOrgNr))
         for (const [i, rate] of invoice.rates.entries()) {
             const csvData = {
                 'Owner ID/Entity Code': '39006',
@@ -47,7 +55,7 @@ const handleBuyOutInvoice = async (invoices) => {
                 Product: '4651000', // Product code for "ElevPC",
                 'Tekst (imp)': `Faktura for ${invoice.student.navn} - Utkjøp av elev-PC - Faktura ${i+1}/${invoice.rates.length}`, // Description text for the invoice line
                 Quantity: '1',
-                'Unit Price': returnCorrectPriceForStudent(invoice.student.fnr, invoice.student.klasse, prices, exceptionsFromRegularPrices), // Price based on settings and exceptions
+                'Unit Price': _returnCorrectPriceForStudent(invoice.student.fnr, invoice.student.klasse, prices, exceptionsFromRegularPrices), // Price based on settings and exceptions
                 'Company No': invoice.recipient.fnr, // Person that will be invoiced
                 'Service Type': '465',
                 'Your Ref': invoice.student.navn, // Name of the student
@@ -60,28 +68,34 @@ const handleBuyOutInvoice = async (invoices) => {
             csvDataArray.push(csvData)
         }
     }
-   return await generateInvoiceImportFile('buyOut', csvDataArray)
+   return await _generateInvoiceImportFile('buyOut', csvDataArray)
 }
 /**
  * 
  * @param {Array} invoices 
  */
-const handleExtraInvoice = async (invoices) => {
+const handleExtraInvoice = async (invoices, deps = {}) => {
+    const {
+        schoolInfoList: _schoolInfoList = schoolInfoList,
+        generateSerialNumber: _generateSerialNumber = generateSerialNumber,
+        standardFields: _standardFields = standardFields,
+        generateInvoiceImportFile: _generateInvoiceImportFile = generateInvoiceImportFile,
+    } = deps
+
     const csvDataArray = []
 
     for (const invoice of invoices) {
-        const schoolInfo = schoolInfoList.find(school => school.orgNr === parseInt(invoice?.skoleOrgNr))
-        const serialNumber = await generateSerialNumber(4) // Generate serial number for the invoice, can be used in the description or something to easier find the invoice in Xledger after import
+        const schoolInfo = _schoolInfoList.find(school => school.orgNr === parseInt(invoice?.skoleOrgNr))
+        const serialNumber = await _generateSerialNumber(4) // Generate serial number for the invoice, can be used in the description or something to easier find the invoice in Xledger after import
         for (const [i, product] of invoice.itemsFromCart.entries()) {
             const extraFields = {}
             for (const key in product) {
-                if (!standardFields.includes(key)) {
+                if (!_standardFields.includes(key)) {
                     extraFields[key] = product[key]
-                    extraFields[key]
                 }
             }
 
-            // Build the text string for the "Tekst (imp)" field. 
+            // Build the text string for the "Tekst (imp)" field.
             const extraFieldsText = Object.entries(extraFields).map(([key, value]) => `${key}: ${value}`).join(' - ')
 
 
@@ -108,7 +122,7 @@ const handleExtraInvoice = async (invoices) => {
             csvDataArray.push(csvData)
         }
     }
-   return await generateInvoiceImportFile('extraInvoice', csvDataArray)
+   return await _generateInvoiceImportFile('extraInvoice', csvDataArray)
 }
 
 /**
@@ -159,7 +173,9 @@ const processInvoices = async () => {
 }
 
 module.exports = {
-    processInvoices
+    processInvoices,
+    handleBuyOutInvoice,
+    handleExtraInvoice,
 }
 
 
