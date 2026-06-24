@@ -394,6 +394,7 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
   return document
 }
 module.exports = {
+  getBillingYear,
   fillDocument,
   fillManualDocument,
   digitrollImportDocument
