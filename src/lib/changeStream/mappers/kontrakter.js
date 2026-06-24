@@ -15,10 +15,10 @@
 module.exports = (doc, changeEvent) => {
   if (!doc.pureserviceId) return null
 
-  // If this is a change stream event, only forward if fakturaInfo was updated (insertions always forward).
+  // If this is a change stream event, only forward if fakturaInfo or pureserviceId was updated (insertions always forward).
   if (changeEvent) {
     const updatedKeys = Object.keys(changeEvent.updateDescription?.updatedFields ?? {})
-    if (!updatedKeys.some(k => k.startsWith('fakturaInfo'))) return null
+    if (!updatedKeys.some(k => k.startsWith('fakturaInfo') || k === 'pureserviceId')) return null
   }
 
   const cf2value = "{\"_id\": \"" + (doc._id ?? '') + "\", \"rate1\": \"" + (doc.fakturaInfo?.rate1?.status ?? '') + "\", \"rate2\": \"" + (doc.fakturaInfo?.rate2?.status ?? '') + "\", \"rate3\": \"" + (doc.fakturaInfo?.rate3?.status ?? '') + "\"}"

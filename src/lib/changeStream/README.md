@@ -125,11 +125,13 @@ Each mapper exports a single function:
 module.exports = (doc, changeEvent) => {
   if (!doc.pureserviceId) return null   // skip — Pureservice ID not yet set
 
-  // Optional: only forward if a relevant field changed.
+  // Forward on relevant field changes or when pureserviceId is first assigned.
   // updatedFields stores $set paths as flat string keys, so use startsWith for dot-notation paths.
+  // Including 'pureserviceId' ensures the contract data is pushed to Pureservice immediately
+  // when the daily syncPureserviceStudents job matches and writes the ID for the first time.
   if (changeEvent) {
     const updatedKeys = Object.keys(changeEvent.updateDescription?.updatedFields ?? {})
-    if (!updatedKeys.some(k => k.startsWith('fakturaInfo'))) return null
+    if (!updatedKeys.some(k => k.startsWith('fakturaInfo') || k === 'pureserviceId')) return null
   }
 
   return {
