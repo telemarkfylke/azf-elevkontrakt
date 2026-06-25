@@ -249,7 +249,7 @@ const getDocuments = async (query, documentType) => {
   }
 
   if (result.length === 0) {
-    logger('info', [logPrefix, 'Fant ingen dokumenter'])
+    logger('info', [logPrefix, 'Fant ingen dokumenter - collection:', documentType, 'query:', query])
     return { status: 404, error: 'Fant ingen dokumenter' }
   } else {
     logger('info', [logPrefix, `Fant ${result.length} dokumenter`])
@@ -300,7 +300,7 @@ const updateContractPCStatus = async (contract, isMock, targetCollection) => {
   } else if (contract.returnPC === 'true' || contract.returnPC === 'false') {
     logger('info', [logPrefix, `Oppdaterer objekt med _id: ${contract.contractID}, returnPC: ${contract.returnPC}`])
     const returnPCInfo = {
-      'pcInfo.returnedBy': contract.upn,
+      'pcInfo.returnedRegisteredBy': contract.upn,
       'pcInfo.returnedDate': new Date(),
       'pcInfo.returned': contract.returnPC
     }
