@@ -294,7 +294,8 @@ const updateContractPCStatus = async (contract, isMock, targetCollection) => {
     const releasePCInfo = {
       'pcInfo.releaseBy': contract.upn,
       'pcInfo.releasedDate': new Date(),
-      'pcInfo.released': contract.releasePC
+      'pcInfo.released': contract.releasePC,
+      ...(contract.releasePC === 'true' ? { 'pcInfo.returned': 'false' } : {})
     }
     pcUpdateObject = releasePCInfo
   } else if (contract.returnPC === 'true' || contract.returnPC === 'false') {
@@ -302,7 +303,8 @@ const updateContractPCStatus = async (contract, isMock, targetCollection) => {
     const returnPCInfo = {
       'pcInfo.returnedRegisteredBy': contract.upn,
       'pcInfo.returnedDate': new Date(),
-      'pcInfo.returned': contract.returnPC
+      'pcInfo.returned': contract.returnPC,
+      ...(contract.returnPC === 'true' ? { 'pcInfo.released': 'false' } : {})
     }
     pcUpdateObject = returnPCInfo
   } else if (contract.buyOutPC === 'true' || contract.buyOutPC === 'false') {
