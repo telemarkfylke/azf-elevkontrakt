@@ -53,8 +53,8 @@ const updatePCStatus = async (studentId, newStatus, requestMadeBy, deps = {}) =>
   }
 
   if (!contract) {
-    logger('error', [logPrefix, `No contract found for studentId/pureserviceId: ${studentId}`])
-    const err = new Error(`No contract found for studentId/pureserviceId: ${studentId}`)
+    logger('error', [logPrefix, `No contract found for studentId/pureserviceId: ${studentId}, requestMadeBy: ${requestMadeBy}`])
+    const err = new Error(`No contract found for studentId/pureserviceId: ${studentId}, requestMadeBy: ${requestMadeBy}`)
     err.status = 404
     throw err
   }
