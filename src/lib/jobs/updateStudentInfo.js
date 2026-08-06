@@ -29,6 +29,7 @@ const { getDocuments, updateDocument, moveAndDeleteDocument } = require('./query
 const { teams } = require('../../../config.js')
 const { logger } = require('@vtfk/logger')
 const { student } = require('./queryFINT')
+const { determineHistoryMoveTarget } = require('./contractChecks.js')
 const axios = require('axios').default
 
 const updateStudentInfo = async () => {
@@ -71,49 +72,27 @@ const updateStudentInfo = async () => {
       const date = new Date()
       date.setDate(date.getDate() - 5)
       if (doc.notFoundInFINT.date < date) {
-        
-        // Get the current rate statuses
-        const rates = []
-        rates.push(doc.fakturaInfo.rate1.status)
-        rates.push(doc.fakturaInfo.rate2.status)
-        rates.push(doc.fakturaInfo.rate3.status)
-
-        // If its more than 5 days old, move the document to the history database
-        logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 5 days, moving to history database`])
-        // Only move the document if the student have returned the pc or bought it out, and have no rates with status "Ikke Fakturert"
-        if ((doc.pcInfo.returned === 'true' || doc.pcInfo.boughtOut === 'true') && !rates.some(rate => rate === 'Ikke Fakturert')) {
-          movedDocuments.push(doc._id)
-        } else {
-          report.pcNotDeliveredHistoryCountOrRatesNotPaidCount += 1
-          pcNotDeliveredHistoryCountOrRatesNotPaid.push(doc._id)
-        }
-        // Move the document to the history database
-        if (movedDocuments.length > 0) {
+        // If its more than 5 days old, move the document to the history database or the pcIkkeInnlevert database
+        logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 5 days, moving to history or pcIkkeInnlevert database`])
+        const target = determineHistoryMoveTarget(doc)
+        if (target === 'historic') {
           try {
-            // If its time to move the student to the history database, check if the pc status.
-            // The student should only be moved if the pc is returned or not delivered to the student.
-            // pcInfo.released === "false" or pcInfo.released === "true" and pcInfo.returned === "true"
-            // if (doc.pcInfo?.released === "true" && doc.pcInfo?.returned !== "true") {
-            //     logger('warn', [loggerPrefix, `Document with _id ${doc._id} has pcInfo.released === "true" and pcInfo.returned !== "true", not moving to history database`])
-            //     await moveAndDeleteDocument(doc._id, 'historic-pcNotDelivered', false) // Move the document to the historic-pcNotDelivered collection instead
-            //     report.pcNotDeliveredHistoryCount += 1
-            // } else {
             await moveAndDeleteDocument(doc._id, 'historic', 'regular')
             logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to history database`])
+            movedDocuments.push(doc._id)
             report.historyCount += 1
-            // }
           } catch (error) {
             logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to history database`, error])
           }
-        } else if (pcNotDeliveredHistoryCountOrRatesNotPaid.length > 0) {
+        } else {
           try {
-            await moveAndDeleteDocument(doc._id, 'pcIkkeInnlevert', 'regular') // Move the document to the pcIkkeInnlevert collection instead
+            await moveAndDeleteDocument(doc._id, 'pcIkkeInnlevert', 'regular')
             logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to pcIkkeInnlevert database`])
+            pcNotDeliveredHistoryCountOrRatesNotPaid.push(doc._id)
+            report.pcNotDeliveredHistoryCountOrRatesNotPaidCount += 1
           } catch (error) {
             logger('error', [loggerPrefix, `Error moving document with _id ${doc._id} to pcIkkeInnlevert database`, error])
           }
-        } else {
-          logger('info', [loggerPrefix, `Document with _id ${doc._id} has not returned the pc or have rates with status "Ikke Fakturert", not moving to history database`])
         }
       }
     }

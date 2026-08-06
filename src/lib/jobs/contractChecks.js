@@ -61,8 +61,30 @@ const applyHistoricalFakturaInfo = (document, historicalContract) => {
   return { ...document, fakturaInfo: mergedFakturaInfo }
 }
 
+const RETURNED_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Ikke Fakturert', 'Utlån faktureres ikke', 'Kreditert']
+const BOUGHT_OUT_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Utlån faktureres ikke', 'Kreditert']
+
+/**
+ * Decides whether a contract should be archived to 'historic' or routed to 'pcIkkeInnlevert',
+ * based on whether the PC was returned/bought out and whether all rates are in an accepted status
+ * for that path. 'Fakturert' and 'Overført inkasso' (and any unrecognized status) always block
+ * the move to 'historic', since they represent an unresolved invoice.
+ * @param {Object} doc - Contract document with pcInfo and fakturaInfo
+ * @returns {'historic'|'pcIkkeInnlevert'}
+ */
+const determineHistoryMoveTarget = (doc) => {
+  const rates = [doc.fakturaInfo.rate1.status, doc.fakturaInfo.rate2.status, doc.fakturaInfo.rate3.status]
+  const returnedRatesOk = rates.every(status => RETURNED_ALLOWED_RATE_STATUSES.includes(status))
+  const boughtOutRatesOk = rates.every(status => BOUGHT_OUT_ALLOWED_RATE_STATUSES.includes(status))
+  const shouldMoveToHistory =
+    (doc.pcInfo.returned === 'true' && returnedRatesOk) ||
+    (doc.pcInfo.boughtOut === 'true' && boughtOutRatesOk)
+  return shouldMoveToHistory ? 'historic' : 'pcIkkeInnlevert'
+}
+
 module.exports = {
   checkIsDuplicate,
   findLatestHistoricalContract,
-  applyHistoricalFakturaInfo
+  applyHistoricalFakturaInfo,
+  determineHistoryMoveTarget
 }
