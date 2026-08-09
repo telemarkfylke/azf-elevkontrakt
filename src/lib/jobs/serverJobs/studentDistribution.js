@@ -2,6 +2,7 @@ const { logger } = require('@vtfk/logger')
 const { getDocuments } = require('../queryMongoDB')
 const { student } = require('../queryFINT')
 const { utdanningsprogram } = require('../../datasources/utdanningsprogram')
+const { isElevforholdActive } = require('../../helpers/isElevforholdActive')
 
 /**
  * Get all students from the database and categorize them by their education program (utdanningsprogram)
@@ -89,7 +90,7 @@ const getStudentDistributionByEducationProgram = async () => {
 
         stats.studentsWithFintData++
 
-        const activeElevforhold = fintData.elevforhold?.filter(forhold => forhold.aktiv === true) || []
+        const activeElevforhold = fintData.elevforhold?.filter(forhold => isElevforholdActive(forhold)) || []
         
         if (activeElevforhold.length === 0) {
           logger('warn', [loggerPrefix, `No active elevforhold found for student ${fnr}`])

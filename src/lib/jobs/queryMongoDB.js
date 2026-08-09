@@ -496,8 +496,8 @@ const postDigitrollContract = async (contract, targetCollection, contractType) =
 /**
  * Flytt et dokument til en annen collection og slett det fra den opprinnelige collection
  * @param {String} documentId | _id til dokumentet som skal slettes
- * @param {String} targetCollection | deleted | historic
- * @param {String} sourceCollection | preImport | mock | regular | pcIkkeInnlevert
+ * @param {String} targetCollection | deleted | historic | contracts | duplicates | pcIkkeInnlevert
+ * @param {String} sourceCollection | preImport | mock | regular | pcIkkeInnlevert | historic
  * @returns
  */
 
@@ -530,6 +530,8 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
       return mongoDB.historicPcNotDeliveredCollection
     } else if (sourceCollection === 'regular') {
       return mongoDB.contractsCollection
+    } else if (sourceCollection === 'historic') {
+      return mongoDB.historicCollection
     } else {
       return null
     }

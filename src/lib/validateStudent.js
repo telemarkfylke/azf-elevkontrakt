@@ -3,6 +3,7 @@ const { student, schoolInfo } = require('../lib/jobs/queryFINT.js')
 const { person } = require('../lib/jobs/queryFREG.js')
 const { lookupKRR } = require('../lib/jobs/queryKRR.js')
 const { schoolInfoList } = require('./datasources/tfk-schools.js')
+const { isElevforholdActive } = require('./helpers/isElevforholdActive')
 
 const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
   let studentData
@@ -77,7 +78,7 @@ const validateStudentInfo = async (ssn, onlyAnsvarlig) => {
     }
   }
   try {
-    const activeElevforhold = studentData.elevforhold.filter(forhold => forhold?.aktiv === true)
+    const activeElevforhold = studentData.elevforhold.filter(forhold => isElevforholdActive(forhold))
     let fintElevForhold
     if (activeElevforhold.length > 1) {
       fintElevForhold = activeElevforhold.find(forhold => forhold.kategori.navn.toLowerCase() !== 'privatist' && forhold.skole.skolenummer !== '70036')

@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo } = require('../contractChecks.js')
+const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, determineHistoryMoveTarget } = require('../contractChecks.js')
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -163,6 +163,81 @@ describe('applyHistoricalFakturaInfo', () => {
     // Missing keys spread to {} — no status, so no faktureringsår update, no crash
     assert.deepEqual(result.fakturaInfo.rate2, {})
     assert.deepEqual(result.fakturaInfo.rate3, {})
+  })
+})
+
+// =====================================================================
+// determineHistoryMoveTarget — pure function
+// =====================================================================
+
+const makeMoveTargetDoc = ({ returned = 'false', boughtOut = 'false', rateStatuses = ['Ikke Fakturert', 'Ikke Fakturert', 'Ikke Fakturert'] } = {}) => ({
+  pcInfo: { returned, boughtOut },
+  fakturaInfo: {
+    rate1: { status: rateStatuses[0] },
+    rate2: { status: rateStatuses[1] },
+    rate3: { status: rateStatuses[2] }
+  }
+})
+
+describe('determineHistoryMoveTarget', () => {
+  test('returned, all rates "Ikke Fakturert" -> historic', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', rateStatuses: ['Ikke Fakturert', 'Ikke Fakturert', 'Ikke Fakturert'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
+  })
+
+  test('returned, all rates "Betalt" -> historic', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', rateStatuses: ['Betalt', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
+  })
+
+  test('returned, one rate "Utlån faktureres ikke", rest "Betalt" -> historic', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', rateStatuses: ['Utlån faktureres ikke', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
+  })
+
+  test('returned, one rate "Kreditert", rest "Betalt" -> historic', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', rateStatuses: ['Kreditert', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
+  })
+
+  test('returned, one rate "Fakturert" -> pcIkkeInnlevert', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', rateStatuses: ['Fakturert', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
+  })
+
+  test('returned, one rate "Overført inkasso" -> pcIkkeInnlevert', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', rateStatuses: ['Overført inkasso', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
+  })
+
+  test('returned, one rate with an unrecognized status -> pcIkkeInnlevert', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', rateStatuses: ['Ukjent', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
+  })
+
+  test('bought out, all rates "Betalt" -> historic', () => {
+    const doc = makeMoveTargetDoc({ boughtOut: 'true', rateStatuses: ['Betalt', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
+  })
+
+  test('bought out, all rates "Ikke Fakturert" -> pcIkkeInnlevert (not allowed for bought-out)', () => {
+    const doc = makeMoveTargetDoc({ boughtOut: 'true', rateStatuses: ['Ikke Fakturert', 'Ikke Fakturert', 'Ikke Fakturert'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
+  })
+
+  test('bought out, one rate "Fakturert" -> pcIkkeInnlevert', () => {
+    const doc = makeMoveTargetDoc({ boughtOut: 'true', rateStatuses: ['Fakturert', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
+  })
+
+  test('neither returned nor bought out -> pcIkkeInnlevert', () => {
+    const doc = makeMoveTargetDoc({ returned: 'false', boughtOut: 'false', rateStatuses: ['Betalt', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
+  })
+
+  test('both returned and bought out, rates only satisfy the bought-out list -> historic', () => {
+    const doc = makeMoveTargetDoc({ returned: 'true', boughtOut: 'true', rateStatuses: ['Skal ikke betale', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
   })
 })
 

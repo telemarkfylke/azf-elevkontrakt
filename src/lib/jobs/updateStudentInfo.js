@@ -30,6 +30,7 @@ const { teams } = require('../../../config.js')
 const { logger } = require('@vtfk/logger')
 const { student } = require('./queryFINT')
 const { determineHistoryMoveTarget } = require('./contractChecks.js')
+const { isElevforholdActive } = require('../helpers/isElevforholdActive')
 const axios = require('axios').default
 
 const updateStudentInfo = async () => {
@@ -152,7 +153,7 @@ const updateStudentInfo = async () => {
       let fintElevForhold
       if (Array.isArray(fintData.elevforhold)) {
         // Find all the active elevforhold
-        const activeElevforhold = fintData.elevforhold.filter(forhold => forhold.aktiv === true)
+        const activeElevforhold = fintData.elevforhold.filter(forhold => isElevforholdActive(forhold))
         // If there are multiple active elevforhold, the student might be attending multiple schools (e.g. privatist and regular student, or a VO student at several schools).
         // Prefer the elevforhold matching FINT's hovedskole, excluding privatist and fagskole (70036).
         if (activeElevforhold.length > 1) {
