@@ -37,6 +37,22 @@ const buildFindOneClient = (results) => {
   return { db: () => ({ collection }) }
 }
 
+/**
+ * Builds a mock mongoClient that behaves like a real Mongo collection with respect to
+ * the { $regex, $options: 'i' } query shape checkIsDuplicate now uses — i.e. it actually
+ * evaluates the regex against `storedKontraktType` instead of just returning a canned value.
+ */
+const buildRegexAwareClient = (storedFnr, storedKontraktType) => {
+  const findOne = async (query) => {
+    if (query['elevInfo.fnr'] !== storedFnr) return null
+    const { $regex, $options } = query['unSignedskjemaInfo.kontraktType']
+    const regex = new RegExp($regex, $options)
+    return regex.test(storedKontraktType) ? { _id: '1' } : null
+  }
+  const collection = () => ({ findOne })
+  return { db: () => ({ collection }) }
+}
+
 /** Builds a mock mongoClient whose find().sort().limit().toArray() returns `documents`. */
 const buildFindClient = (documents) => ({
   db: () => ({
@@ -274,6 +290,30 @@ describe('checkIsDuplicate', () => {
     // This verifies the business rule: Leieavtale + Låneavtale for the same student can coexist.
     const client = buildFindOneClient([null, null])
     assert.equal(await checkIsDuplicate('12345678901', 'Låneavtale', client), false)
+  })
+
+  // Regression test — historically 'kontraktType' has been stored with inconsistent casing
+  // (e.g. 'leieavtale' from older imports vs 'Leieavtale' from the ACOS form), which let a
+  // second active contract of the same real-world type slip past the duplicate check.
+  test('returns true when kontraktType differs only by casing (stored lowercase, checked capitalized)', async () => {
+    const client = buildRegexAwareClient('12345678901', 'leieavtale')
+    assert.equal(await checkIsDuplicate('12345678901', 'Leieavtale', client), true)
+  })
+
+  test('returns true when kontraktType differs only by casing (stored capitalized, checked lowercase)', async () => {
+    const client = buildRegexAwareClient('12345678901', 'Leieavtale')
+    assert.equal(await checkIsDuplicate('12345678901', 'leieavtale', client), true)
+  })
+
+  test('still returns false for a genuinely different kontraktType regardless of casing', async () => {
+    const client = buildRegexAwareClient('12345678901', 'LÅNEAVTALE')
+    assert.equal(await checkIsDuplicate('12345678901', 'Leieavtale', client), false)
+  })
+
+  test('does not throw or misbehave when kontraktType contains regex special characters', async () => {
+    const client = buildRegexAwareClient('12345678901', 'Leieavtale (E)')
+    assert.equal(await checkIsDuplicate('12345678901', 'Leieavtale (E)', client), true)
+    assert.equal(await checkIsDuplicate('12345678901', 'Leieavtale', client), false)
   })
 })
 

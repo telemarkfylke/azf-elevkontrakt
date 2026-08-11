@@ -12,7 +12,11 @@ const { getBillingYear } = require('../documentSchema.js')
  * @returns {Promise<boolean>}
  */
 const checkIsDuplicate = async (fnr, kontraktType, mongoClient) => {
-  const query = { 'elevInfo.fnr': fnr, 'unSignedskjemaInfo.kontraktType': kontraktType }
+  // kontraktType is matched case-insensitively since the same contract type has historically
+  // been stored with inconsistent casing (e.g. 'Leieavtale' vs 'leieavtale'), see also the
+  // $in: ['Leieavtale', 'leieavtale'] workarounds used across miscCleanUpJobs.js and xledgerInvoiceImport.js.
+  const escapedKontraktType = kontraktType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const query = { 'elevInfo.fnr': fnr, 'unSignedskjemaInfo.kontraktType': { $regex: `^${escapedKontraktType}$`, $options: 'i' } }
   const [inKontrakter, inPcIkkeInnlevert] = await Promise.all([
     mongoClient.db(mongoDB.dbName).collection(mongoDB.contractsCollection).findOne(query),
     mongoClient.db(mongoDB.dbName).collection(mongoDB.historicPcNotDeliveredCollection).findOne(query)
