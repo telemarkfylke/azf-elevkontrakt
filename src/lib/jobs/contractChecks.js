@@ -17,11 +17,12 @@ const checkIsDuplicate = async (fnr, kontraktType, mongoClient) => {
   // $in: ['Leieavtale', 'leieavtale'] workarounds used across miscCleanUpJobs.js and xledgerInvoiceImport.js.
   const escapedKontraktType = kontraktType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const query = { 'elevInfo.fnr': fnr, 'unSignedskjemaInfo.kontraktType': { $regex: `^${escapedKontraktType}$`, $options: 'i' } }
-  const [inKontrakter, inPcIkkeInnlevert] = await Promise.all([
+  const [inKontrakter, inPcIkkeInnlevert, inHistoric] = await Promise.all([
     mongoClient.db(mongoDB.dbName).collection(mongoDB.contractsCollection).findOne(query),
-    mongoClient.db(mongoDB.dbName).collection(mongoDB.historicPcNotDeliveredCollection).findOne(query)
+    mongoClient.db(mongoDB.dbName).collection(mongoDB.historicPcNotDeliveredCollection).findOne(query),
+    mongoClient.db(mongoDB.dbName).collection(mongoDB.historicCollection).findOne(query)
   ])
-  return inKontrakter !== null || inPcIkkeInnlevert !== null
+  return inKontrakter !== null || inPcIkkeInnlevert !== null || inHistoric !== null
 }
 
 /**
