@@ -134,7 +134,7 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
   return document
 }
 
-const fillManualDocument = (documentData, archiveData, elevData, ansvarligData) => {
+const fillManualDocument = (documentData, archiveData, elevData, ansvarligData, error) => {
   const document = {
     uuid: crypto.randomUUID(),
     generatedTimeStamp: new Date().toISOString(),
@@ -205,7 +205,7 @@ const fillManualDocument = (documentData, archiveData, elevData, ansvarligData) 
       buyOutDate: 'Ukjent',
       boughtOut: 'false'
     },
-    error: []
+    error: error || []
   }
   if (elevData?.status !== 404) {
     document.elevInfo = {

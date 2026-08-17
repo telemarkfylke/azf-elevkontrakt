@@ -362,6 +362,7 @@ const postManualContract = async (contract, archiveData, isMock) => {
   }
   let elevData
   let ansvarligData
+  const error = []
 
   if (isMock !== true) {
     if (contract.fnr) {
@@ -371,13 +372,12 @@ const postManualContract = async (contract, archiveData, isMock) => {
       if (elevData.status === 404) {
         logger('info', [logPrefix, 'Elev ikke funnet i FINT, sjekker FREG'])
         elevData = await person(contract.fnr)
-        // Eleven er ikke funnet
-        if (elevData === undefined) {
-          logger('error', [logPrefix, 'Elev ikke funnet i FREG'])
-          throw new Error('Elev ikke funnet')
+        if (elevData?.foedselsEllerDNummer == null) {
+          logger('info', [logPrefix, 'Elev ikke funnet i FREG'])
+          error.push({ error: 'Elev ikke funnet', fnr: contract.fnr })
         } else {
-          logger('error', [logPrefix, 'Elev ikke funnet i FINT'])
-          throw new Error('Elev ikke funnet i FINT')
+          logger('info', [logPrefix, 'Elev ikke funnet i FINT, men vi fant data i FREG'])
+          error.push({ error: 'Elev ikke funnet i FINT, men vi fant data i FREG', fnr: contract.fnr })
         }
       }
     }
@@ -390,14 +390,14 @@ const postManualContract = async (contract, archiveData, isMock) => {
       logger('info', [logPrefix, 'Ingen foresatt oppgitt for manuell kontrakt, ansvarlig er da eleven selv'])
       ansvarligData = await person(contract.fnr)
     }
-    if (ansvarligData === undefined) {
-      // Ansvarlig er ikke funnet
-      logger('info', [logPrefix, 'Ansvarlig ikke funnet'])
-      throw new Error('Ansvarlig ikke funnet')
+    if (ansvarligData?.foedselsEllerDNummer == null) {
+      // Ansvarlig er ikke funnet i FREG
+      logger('info', [logPrefix, 'Ansvarlig ikke funnet i FREG'])
+      error.push({ error: 'Ansvarlig ikke funnet i FREG', fnr: contract.foresattFnr || contract.fnr })
     }
   }
   // Fyll ut dokumentet med data
-  let document = fillManualDocument(contract, archiveData, elevData, ansvarligData)
+  let document = fillManualDocument(contract, archiveData, elevData, ansvarligData, error)
 
   // Sjekk for duplikater og historisk fakturaInfo (hoppes over for mock-data)
   if (isMock !== true) {

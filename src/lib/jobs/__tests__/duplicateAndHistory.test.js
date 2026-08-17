@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, determineHistoryMoveTarget } = require('../contractChecks.js')
+const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, markAsSigned, determineHistoryMoveTarget } = require('../contractChecks.js')
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -359,5 +359,63 @@ describe('findLatestHistoricalContract', () => {
     const client = buildFindClient([newer, older])
     const result = await findLatestHistoricalContract('12345678901', client)
     assert.equal(result._id, 'new')
+  })
+})
+
+// =====================================================================
+// markAsSigned
+// =====================================================================
+
+describe('markAsSigned', () => {
+  const makeUnsignedDocument = (overrides = {}) => ({
+    isSigned: 'false',
+    unSignedskjemaInfo: {
+      refId: 'ref-1',
+      acosName: 'skjema.pdf',
+      kontraktType: 'Leieavtale',
+      archiveDocumentNumber: '23/00077-60',
+      createdTimeStamp: '2026-08-11T10:00:00.000Z'
+    },
+    signedSkjemaInfo: {
+      refId: 'Ukjent',
+      acosName: 'Ukjent',
+      kontraktType: 'Ukjent',
+      archiveDocumentNumber: 'Ukjent',
+      createdTimeStamp: 'Ukjent'
+    },
+    signedBy: { navn: 'Ukjent', fnr: 'Ukjent' },
+    ...overrides
+  })
+
+  test('sets isSigned to true and copies unSignedskjemaInfo onto signedSkjemaInfo', () => {
+    const document = makeUnsignedDocument()
+    const result = markAsSigned(document)
+    assert.equal(result.isSigned, 'true')
+    assert.deepEqual(result.signedSkjemaInfo, document.unSignedskjemaInfo)
+  })
+
+  test('copies ansvarligInfo onto signedBy when ansvarligInfo was resolved', () => {
+    const document = makeUnsignedDocument({ ansvarligInfo: { navn: 'Kari Nordmann', fnr: '01019012345' } })
+    const result = markAsSigned(document)
+    assert.deepEqual(result.signedBy, { navn: 'Kari Nordmann', fnr: '01019012345' })
+  })
+
+  test('leaves signedBy untouched when ansvarligInfo is undefined', () => {
+    const document = makeUnsignedDocument()
+    const result = markAsSigned(document)
+    assert.deepEqual(result.signedBy, { navn: 'Ukjent', fnr: 'Ukjent' })
+  })
+
+  test('leaves signedBy untouched when ansvarligInfo is the Ukjent placeholder', () => {
+    const document = makeUnsignedDocument({ ansvarligInfo: { navn: 'Ukjent', fnr: 'Ukjent' } })
+    const result = markAsSigned(document)
+    assert.deepEqual(result.signedBy, { navn: 'Ukjent', fnr: 'Ukjent' })
+  })
+
+  test('does not mutate the original document', () => {
+    const document = makeUnsignedDocument({ ansvarligInfo: { navn: 'Kari Nordmann', fnr: '01019012345' } })
+    markAsSigned(document)
+    assert.equal(document.isSigned, 'false')
+    assert.equal(document.signedBy.navn, 'Ukjent')
   })
 })

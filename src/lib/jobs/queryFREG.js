@@ -19,7 +19,8 @@ const queryFREG = async (request) => {
     const fregData = await axios.request(fregRequest)
     return fregData.data
   } catch (error) {
-    return error
+    logger('error', ['queryFREG', 'Klarte ikke å hente data fra FREG', error])
+    return { status: error?.response?.status || 500, message: 'Internal server error' }
   }
 }
 

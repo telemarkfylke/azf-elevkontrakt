@@ -65,6 +65,27 @@ const applyHistoricalFakturaInfo = (document, historicalContract) => {
   return { ...document, fakturaInfo: mergedFakturaInfo }
 }
 
+/**
+ * Backfills signedSkjemaInfo/signedBy/isSigned on a document that is actually signed but never
+ * had those fields populated (e.g. the signing update was lost because the document was
+ * misfiled in duplicatesCollection at the time). Any document reaching 'kontrakter' is signed,
+ * so isSigned is unconditionally set to 'true'; signedSkjemaInfo is copied from
+ * unSignedskjemaInfo (both share the same shape); signedBy is copied from ansvarligInfo only
+ * when ansvarligInfo was actually resolved (not the 'Ukjent' placeholder), otherwise left as-is.
+ * @param {Object} document
+ * @returns {Object} - New document object with signed fields backfilled
+ */
+const markAsSigned = (document) => {
+  const ansvarligInfo = document.ansvarligInfo
+  const ansvarligResolved = ansvarligInfo && ansvarligInfo.navn !== 'Ukjent' && ansvarligInfo.fnr !== 'Ukjent'
+  return {
+    ...document,
+    isSigned: 'true',
+    signedSkjemaInfo: { ...document.unSignedskjemaInfo },
+    signedBy: ansvarligResolved ? { navn: ansvarligInfo.navn, fnr: ansvarligInfo.fnr } : document.signedBy
+  }
+}
+
 const RETURNED_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Ikke Fakturert', 'Utlån faktureres ikke', 'Kreditert']
 const BOUGHT_OUT_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Utlån faktureres ikke', 'Kreditert']
 
@@ -90,5 +111,6 @@ module.exports = {
   checkIsDuplicate,
   findLatestHistoricalContract,
   applyHistoricalFakturaInfo,
+  markAsSigned,
   determineHistoryMoveTarget
 }
