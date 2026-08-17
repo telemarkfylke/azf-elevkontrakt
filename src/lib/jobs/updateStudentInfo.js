@@ -33,12 +33,23 @@ const { determineHistoryMoveTarget } = require('./contractChecks.js')
 const { isElevforholdActive } = require('../helpers/isElevforholdActive')
 const axios = require('axios').default
 
-const updateStudentInfo = async () => {
+
+/**
+ * Updates student information in the database.
+ * @param {boolean} skipCache - If true, skips the cache when fetching student data from FINT.
+ * @param {boolean} updateOnlyIfPCStatusIsFalse - If true, only updates documents where pcInfo.released is false.
+ * @returns {Promise<Object>} - Report object containing counts of updated documents, moved documents, and students not found in FINT.
+*/
+
+const updateStudentInfo = async (skipCache, updateOnlyIfPCStatusIsFalse) => {
   const loggerPrefix = 'updateStudentInfo'
   const updatedDocuments = []
   const movedDocuments = []
   const studentsWithoutActiveElevforhold = []
   const pcNotDeliveredHistoryCountOrRatesNotPaid = []
+
+  let documents = []
+
   // Report object to be returned at the end of the function
   // Also used in the teams message
   const report = {
@@ -99,15 +110,27 @@ const updateStudentInfo = async () => {
     }
   }
 
-  logger('info', [loggerPrefix, 'Starting to update student information'])
-  const documents = await getDocuments({}, 'regular')
+  if(updateOnlyIfPCStatusIsFalse) {
+    // Implementation for updating only if PC status is false
+    logger('info', [loggerPrefix, 'Starting to update student information for all documents'])
+    documents = await getDocuments({
+      "pcInfo.released": { $in: [false, "false"] }
+    }, 'regular')
+  } else {
+    logger('info', [loggerPrefix, 'Starting to update student information for all documents'])
+    documents = await getDocuments({}, 'regular')
+  }
+
   if (documents.result.length === 0) { return report } // If no documents are found, we can return the report
   report.totalNumberOfDocuments = documents.result.length
+
   for (const doc of documents.result) {
     const updateData = {}
     const fnr = doc.elevInfo.fnr
     let studentGotElevforhold = true
-    const fintData = await student(fnr, false, false)
+    
+    // Use the student function from queryFINT.js to get the student data from FINT
+    const fintData = await student(fnr, false, skipCache) 
     if (fintData.status === 404 && fintData.message === 'Personen er ikke en student' && fintData.status !== 200) {
       // If the student is not found. Try to move the document to the history database.
       try {
