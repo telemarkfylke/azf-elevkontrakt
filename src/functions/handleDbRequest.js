@@ -31,7 +31,6 @@ app.http('handleDbRequest', {
 
       if (request.query.get('contractID')) {
         // Push the contractID query to the query object
-        // Valid format {_id: { $in:  [ '6926bf134830e2222ba37d76', '6926c0592b6fa4d8e9609eb3' ]}}
         const contractIDs = request.query.get('contractID').split(',')
         const contractsToQuery = []
         for (const id of contractIDs) {
@@ -79,15 +78,15 @@ app.http('handleDbRequest', {
               try {
                 archive = await archiveDocument(jsonBody)
                 /**
-                                 * Example of the archive object that should be returned from the archiveDocument function
-                                 * archive = {
-                                 *     Recno: 201202,
-                                 *     DocumentNumber: '23/00077-60',
-                                 *     ImportedDocumentNumber: null,
-                                 *     UID: '38cffcb5-77b7-4d9a-adf2-c669f57bb33e',
-                                 *     UIDOrigin: '360'
-                                 * }
-                                 */
+                 * Example of the archive object that should be returned from the archiveDocument function
+                 * archive = {
+                 *     Recno: 201202,
+                 *     DocumentNumber: '23/00077-60',
+                 *     ImportedDocumentNumber: null,
+                 *     UID: '38cffcb5-77b7-4d9a-adf2-c669f57bb33e',
+                 *     UIDOrigin: '360'
+                 * }
+                 */
               } catch (error) {
                 logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', error])
                 throw new Error('Internal server error', error)
@@ -102,7 +101,6 @@ app.http('handleDbRequest', {
                 throw new Error('Internal server error', error)
               }
               return { status: 200, jsonBody: manualContract }
-              // Update the database
             } else {
               // Handle non manual contracts posting to the database
               try {

@@ -315,6 +315,20 @@ describe('checkIsDuplicate', () => {
     assert.equal(await checkIsDuplicate('12345678901', 'Leieavtale (E)', client), true)
     assert.equal(await checkIsDuplicate('12345678901', 'Leieavtale', client), false)
   })
+
+  // Regression test — 8a5867f briefly added a 3rd findOne against 'historiske-avtaler' (the
+  // same collection findLatestHistoricalContract checks for the legitimate merge case), which
+  // caused a returning student's first legitimate new contract to be misclassified as a
+  // duplicate and stranded in duplicatesCollection instead of being merged and posted to
+  // kontrakter. checkIsDuplicate must only ever check 'kontrakter' and
+  // 'historiske-avtaler-pc-ikke-innlevert' — a match in historical data alone is not a duplicate.
+  test('only queries kontrakter and pcIkkeInnlevert — must not check historiske-avtaler for duplicates', async () => {
+    let findOneCallCount = 0
+    const findOne = async () => { findOneCallCount++; return null }
+    const client = { db: () => ({ collection: () => ({ findOne }) }) }
+    await checkIsDuplicate('12345678901', 'Leieavtale', client)
+    assert.equal(findOneCallCount, 2)
+  })
 })
 
 // =====================================================================
