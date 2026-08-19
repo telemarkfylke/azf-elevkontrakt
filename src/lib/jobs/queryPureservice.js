@@ -63,14 +63,14 @@ const fetchAllPages = async (baseUrl) => {
 }
 
 /**
- * Fetches all Pureservice users with title "Elev" (students).
+ * Fetches all Pureservice users with title "Elev" or "Elev-" (students).
  * Returns an array of { pusId, emails[] } objects.
  */
 const getAllStudents = async () => {
   const logPrefix = 'queryPureservice - getAllStudents'
-  logger('info', [logPrefix, 'Fetching all Pureservice students (Elev)'])
+  logger('info', [logPrefix, 'Fetching all Pureservice students (Elev / Elev-)'])
 
-  const filter = encodeURIComponent('title == "Elev"')
+  const filter = encodeURIComponent('title == "Elev" || title == "Elev-"')
   const baseUrl = `${pureservice.url}/agent/api/user/?include=emailaddresses&filter=${filter}`
 
   const { users, emails } = await fetchAllPages(baseUrl)
@@ -132,4 +132,28 @@ const patchUser = async (pusId, payload) => {
   }
 }
 
-module.exports = { getAllStudents, patchUser }
+/**
+ * Fetches a single Pureservice user record, optionally including a related resource.
+ * @param {number|string} pusId - Pureservice user ID
+ * @param {string} [includeParam] - value for the `include` query param (e.g. a relation name)
+ */
+const getUser = async (pusId, includeParam) => {
+  const url = `${pureservice.url}/agent/api/user/${pusId}${includeParam ? `?include=${includeParam}` : ''}`
+  return doPureserviceRequest(url)
+}
+
+/**
+ * Fetches AssetRegistration records for a Pureservice user, most recent first.
+ * @param {number|string} pusId - Pureservice user ID
+ * @param {'Active'|'Inactive'} [status] - filter by AssetRegistrationStatus; omit for full history (both active and inactive)
+ */
+const getAssetRegistrations = async (pusId, status) => {
+  const conditions = [`userId == ${pusId}`]
+  if (status) conditions.push(`status == AssetRegistrationStatus.${status}`)
+  const filter = encodeURIComponent(conditions.join(' && '))
+  const sort = encodeURIComponent('created DESC')
+  const url = `${pureservice.url}/agent/api/assetregistration/?filter=${filter}&include=asset&sort=${sort}`
+  return doPureserviceRequest(url)
+}
+
+module.exports = { getAllStudents, patchUser, getUser, getAssetRegistrations }
