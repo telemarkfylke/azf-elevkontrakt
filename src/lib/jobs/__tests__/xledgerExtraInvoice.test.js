@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { handleBuyOutInvoice, handleExtraInvoice } = require('../serverJobs/xledgerExtraInvoice.js')
+const { handleBuyOutInvoice, handleExtraInvoice, processInvoices } = require('../serverJobs/xledgerExtraInvoice.js')
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -26,6 +26,7 @@ const makeExtraInvoice = (overrides = {}) => ({
   skoleOrgNr: '974568098',
   student: { fnr: '12345678901', navn: 'Test Elev' },
   recipient: { fnr: '98765432100' },
+  løpenummer: 'JOT-000000001-4-2024-abc123',
   itemsFromCart: [
     { _id: 'prod-1', name: 'Mus', price: 250, description: 'Standard mus', active: true, color: 'black', size: 'medium' },
     { _id: 'prod-2', name: 'Tastatur', price: 500, description: 'Trådløst', active: true, layout: 'nordic' },
@@ -65,6 +66,9 @@ const makeExtraDeps = (capturedCsv, serialCounter = { n: 0 }) => ({
     if (capturedCsv) capturedCsv.push(...csvData)
     return { status: 200, type }
   },
+  // Defensive default so a test that forgets to override this never accidentally hits the real database.
+  updateDocument: async () => ({ status: 200 }),
+  logger: () => {},
 })
 
 // =====================================================================
@@ -261,17 +265,72 @@ describe('handleExtraInvoice', () => {
     assert.equal(csv[0]['Order No'], csv[1]['Order No'])
   })
 
-  test('Order No is generated once per invoice, different invoices get different serial numbers', async () => {
+  test('Order No equals invoice.løpenummer, per invoice, not a shared counter', async () => {
     const csv = []
-    const counter = { n: 0 }
-    const inv1 = makeExtraInvoice({ _id: 'inv1' })
-    const inv2 = makeExtraInvoice({ _id: 'inv2' })
-    await handleExtraInvoice([inv1, inv2], makeExtraDeps(csv, counter))
+    const inv1 = makeExtraInvoice({ _id: 'inv1', løpenummer: 'SN-1' })
+    const inv2 = makeExtraInvoice({ _id: 'inv2', løpenummer: 'SN-2' })
+    await handleExtraInvoice([inv1, inv2], makeExtraDeps(csv))
     const sn1 = csv.filter(r => r.Dummy4 === 'inv1').map(r => r['Order No'])
     const sn2 = csv.filter(r => r.Dummy4 === 'inv2').map(r => r['Order No'])
-    assert.ok(sn1.every(sn => sn === sn1[0]), 'All rows for inv1 share the same SN')
-    assert.ok(sn2.every(sn => sn === sn2[0]), 'All rows for inv2 share the same SN')
-    assert.notEqual(sn1[0], sn2[0], 'Different invoices have different SNs')
+    assert.ok(sn1.every(sn => sn === 'SN-1'), 'All rows for inv1 use its persisted løpenummer')
+    assert.ok(sn2.every(sn => sn === 'SN-2'), 'All rows for inv2 use its persisted løpenummer')
+  })
+
+  test('reuses the persisted løpenummer without generating or persisting a new one', async () => {
+    const csv = []
+    let generateCalls = 0
+    let updateCalls = 0
+    const invoice = makeExtraInvoice({ løpenummer: 'EXISTING-SN' })
+    const deps = {
+      ...makeExtraDeps(csv),
+      generateSerialNumber: async () => { generateCalls++; return 'SHOULD-NOT-BE-USED' },
+      updateDocument: async () => { updateCalls++; return { status: 200 } },
+    }
+    await handleExtraInvoice([invoice], deps)
+    assert.equal(csv[0]['Order No'], 'EXISTING-SN')
+    assert.equal(generateCalls, 0, 'Should not generate a new serial number when one is already persisted')
+    assert.equal(updateCalls, 0, 'Should not write back when nothing changed')
+  })
+
+  test('when løpenummer is missing (pre-fix data), generates one and persists it via updateDocument', async () => {
+    const csv = []
+    const updates = []
+    const invoice = makeExtraInvoice({ løpenummer: undefined })
+    const deps = {
+      ...makeExtraDeps(csv),
+      generateSerialNumber: async () => 'SN-FALLBACK',
+      updateDocument: async (id, data, type) => { updates.push({ id, data, type }); return { status: 200 } },
+    }
+    await handleExtraInvoice([invoice], deps)
+    assert.equal(csv[0]['Order No'], 'SN-FALLBACK')
+    assert.equal(updates.length, 1)
+    assert.equal(updates[0].id, invoice._id)
+    assert.deepEqual(updates[0].data, { løpenummer: 'SN-FALLBACK' })
+    assert.equal(updates[0].type, 'invoices')
+  })
+
+  test('a subsequent run with the persisted løpenummer no longer hits the fallback', async () => {
+    const csv1 = []
+    let persisted
+    const invoice = makeExtraInvoice({ løpenummer: undefined })
+    const firstRunDeps = {
+      ...makeExtraDeps(csv1),
+      generateSerialNumber: async () => 'SN-STABLE',
+      updateDocument: async (id, data) => { persisted = data.løpenummer; return { status: 200 } },
+    }
+    await handleExtraInvoice([invoice], firstRunDeps)
+    assert.equal(persisted, 'SN-STABLE')
+
+    // Simulate the next scheduled run re-fetching the same invoice, now with løpenummer persisted from the DB
+    const csv2 = []
+    let generateCalls = 0
+    const secondRunDeps = {
+      ...makeExtraDeps(csv2),
+      generateSerialNumber: async () => { generateCalls++; return 'SHOULD-NOT-BE-USED' },
+    }
+    await handleExtraInvoice([{ ...invoice, løpenummer: persisted }], secondRunDeps)
+    assert.equal(csv2[0]['Order No'], 'SN-STABLE', 'Retry uses the same Order No instead of minting a new invoice')
+    assert.equal(generateCalls, 0)
   })
 
   test('Line No increments from 1 per invoice', async () => {
@@ -431,5 +490,71 @@ describe('handleExtraInvoice', () => {
     assert.equal(csv[0]['End Of Line'], 'X')
     assert.equal(csv[0]['ImpSystem'], 'Skoleutvikling - JOTNE')
     assert.equal(csv[0]['Owner ID/Entity Code'], '39006')
+  })
+})
+
+// =====================================================================
+// processInvoices - batch-wide failure handling (Fix B)
+// =====================================================================
+
+describe('processInvoices', () => {
+  const makeProcessDeps = (overrides = {}) => ({
+    getDocuments: async () => ({
+      status: 200,
+      result: [
+        { _id: 'buyout-1', type: 'buyOut' },
+        { _id: 'extra-1', type: 'extraInvoice' },
+      ],
+    }),
+    handleBuyOutInvoice: async () => ({ status: 200 }),
+    handleExtraInvoice: async () => ({ status: 200 }),
+    sendImportFailureAlert: async () => {},
+    logger: () => {},
+    ...overrides,
+  })
+
+  test('returns both results when both handlers succeed', async () => {
+    const result = await processInvoices(makeProcessDeps())
+    assert.deepEqual(result.buyOutResults, { status: 200 })
+    assert.deepEqual(result.extraInvoiceResults, { status: 200 })
+  })
+
+  test('a buyOut failure sends an alert and does not prevent extraInvoice from being processed', async () => {
+    const alerts = []
+    const result = await processInvoices(makeProcessDeps({
+      handleBuyOutInvoice: async () => { throw new Error('Xledger import returned errors') },
+      sendImportFailureAlert: async (type, error) => { alerts.push({ type, error }) },
+    }))
+
+    assert.equal(alerts.length, 1)
+    assert.equal(alerts[0].type, 'buyOut')
+    assert.equal(result.buyOutResults, undefined, 'buyOut result stays unset on failure')
+    assert.deepEqual(result.extraInvoiceResults, { status: 200 }, 'extraInvoice still gets processed')
+  })
+
+  test('an extraInvoice failure sends an alert and does not throw out of processInvoices', async () => {
+    const alerts = []
+    const result = await processInvoices(makeProcessDeps({
+      handleExtraInvoice: async () => { throw new Error('Xledger import returned errors') },
+      sendImportFailureAlert: async (type, error) => { alerts.push({ type, error }) },
+    }))
+
+    assert.equal(alerts.length, 1)
+    assert.equal(alerts[0].type, 'extraInvoice')
+    assert.deepEqual(result.buyOutResults, { status: 200 })
+    assert.equal(result.extraInvoiceResults, undefined)
+  })
+
+  test('both handlers failing sends two separate alerts, one per type', async () => {
+    const alerts = []
+    await processInvoices(makeProcessDeps({
+      handleBuyOutInvoice: async () => { throw new Error('boom-buyout') },
+      handleExtraInvoice: async () => { throw new Error('boom-extra') },
+      sendImportFailureAlert: async (type, error) => { alerts.push({ type, error: error.message }) },
+    }))
+
+    assert.equal(alerts.length, 2)
+    assert.ok(alerts.some(a => a.type === 'buyOut' && a.error === 'boom-buyout'))
+    assert.ok(alerts.some(a => a.type === 'extraInvoice' && a.error === 'boom-extra'))
   })
 })

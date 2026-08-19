@@ -248,6 +248,53 @@ const sendTeamsMessage = async (message, type) => {
   const postStatus = await axios.post(teams.webhook, teamsMsg, { headers })
   return postStatus
 }
+
+/**
+ * Sends a Teams alert when the Xledger import for a batch fails before any documents could be marked as 'Fakturert'.
+ * Without this, a failed import (e.g. Xledger returning errors) silently aborts status write-back for the whole batch,
+ * and the same documents get picked up and resent on the next scheduled run with nobody aware of the failure.
+ * @param {String} type | The type of invoice import (buyOut, extraInvoice, normalInvoice)
+ * @param {Error} error | The error that caused the import to fail
+ */
+const sendImportFailureAlert = async (type, error) => {
+  const teamsMsg = {
+    type: 'message',
+    attachments: [
+      {
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        contentUrl: null,
+        content: {
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          type: 'AdaptiveCard',
+          version: '1.5',
+          msteams: { width: 'full' },
+          body: [
+            {
+              type: 'TextBlock',
+              text: `Feilmelding - azf-elevkontrakt - ${type} fakturaimport til Xledger`,
+              wrap: true,
+              style: 'heading'
+            },
+            {
+              type: 'TextBlock',
+              text: `Import av **${type}**-fakturaer til Xledger feilet. Ingen dokumenter ble oppdatert i databasen for denne batchen - de vil bli forsøkt fakturert på nytt neste gang jobben kjører.`,
+              wrap: true,
+              weight: 'Bolder',
+              size: 'Medium'
+            },
+            {
+              type: 'TextBlock',
+              text: `Feilmelding: ${error?.message || error}`,
+              wrap: true
+            }
+          ]
+        }
+      }
+    ]
+  }
+  const headers = { contentType: 'application/vnd.microsoft.teams.card.o365connector' }
+  return await axios.post(teams.webhook, teamsMsg, { headers })
+}
 /**
  * 
  * @param {String} customerContractId | The ID of the customer contract to find the invoice document for
@@ -460,5 +507,6 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
 }
 
 module.exports = {
-  generateInvoiceImportFile
+  generateInvoiceImportFile,
+  sendImportFailureAlert
 }

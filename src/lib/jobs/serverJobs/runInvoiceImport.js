@@ -1,11 +1,19 @@
 (async () => {
   require('dotenv').config()
   const { logger } = require('@vtfk/logger')
-  const { generateInvoiceImportFile } = require('./xledgerInvoiceImport')
+  const { generateInvoiceImportFile, sendImportFailureAlert } = require('./xledgerInvoiceImport')
 
   logger('info', ['Starting generateInvoiceImportFile job'])
 
-  const statusInvoice = await generateInvoiceImportFile('normalInvoice', [])
+  let statusInvoice
+  try {
+    statusInvoice = await generateInvoiceImportFile('normalInvoice', [])
+  } catch (error) {
+    // Without this, an Xledger import failure aborts status write-back for the whole batch with nobody aware -
+    // the same documents get resent on the next scheduled run.
+    logger('error', ['Error running generateInvoiceImportFile for normalInvoice', error])
+    await sendImportFailureAlert('normalInvoice', error)
+  }
 
   if (statusInvoice?.csvDataArray) {
     logger('info', [`Finished generateInvoiceImportFile job for invoices. Number of invoices imported: ${statusInvoice.csvDataArray.length}`])

@@ -13,7 +13,7 @@ const { hasInvoiceFlowException } = require("../../helpers/checkInvoiceFlowExcep
 const { returnCorrectPriceForStudent } = require("../../helpers/getCorrectRatePrice")
 const { getDocuments, updateDocument } = require("../queryMongoDB")
 const { getThisYearsPriceList } = require("../../helpers/getSettings")
-const { generateInvoiceImportFile } = require("./xledgerInvoiceImport")
+const { generateInvoiceImportFile, sendImportFailureAlert } = require("./xledgerInvoiceImport")
 const { generateSerialNumber } = require("../../helpers/getSerialNumber")
 const { standardFields } = require("../../datasources/productStandardFields")
 
@@ -80,13 +80,23 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
         generateSerialNumber: _generateSerialNumber = generateSerialNumber,
         standardFields: _standardFields = standardFields,
         generateInvoiceImportFile: _generateInvoiceImportFile = generateInvoiceImportFile,
+        updateDocument: _updateDocument = updateDocument,
+        logger: _logger = logger,
     } = deps
 
     const csvDataArray = []
 
     for (const invoice of invoices) {
         const schoolInfo = _schoolInfoList.find(school => school.orgNr === parseInt(invoice?.skoleOrgNr))
-        const serialNumber = await _generateSerialNumber(4) // Generate serial number for the invoice, can be used in the description or something to easier find the invoice in Xledger after import
+        // Reuse the serial number persisted at creation time (processInvoices.js) instead of generating a new one on every run.
+        // Regenerating it here on every run meant a retry after a failed status write-back would mint a brand-new invoice for the same cart, every day.
+        let serialNumber = invoice.løpenummer
+        if (!serialNumber) {
+            // Fallback for invoices created before løpenummer was persisted at creation time.
+            serialNumber = await _generateSerialNumber(4)
+            await _updateDocument(invoice._id, { løpenummer: serialNumber }, 'invoices')
+            _logger('info', ['handleExtraInvoice', `No løpenummer found on invoice with _id: ${invoice._id}, generated and persisted a new one: ${serialNumber}`])
+        }
         for (const [i, product] of invoice.itemsFromCart.entries()) {
             const extraFields = {}
             for (const key in product) {
@@ -129,18 +139,26 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
  * Main function to process invoices
  * @returns {Promise<void>}
  */
-const processInvoices = async () => {
+const processInvoices = async (deps = {}) => {
+    const {
+        getDocuments: _getDocuments = getDocuments,
+        handleBuyOutInvoice: _handleBuyOutInvoice = handleBuyOutInvoice,
+        handleExtraInvoice: _handleExtraInvoice = handleExtraInvoice,
+        sendImportFailureAlert: _sendImportFailureAlert = sendImportFailureAlert,
+        logger: _logger = logger,
+    } = deps
+
     const logPrefix = 'processInvoices'
     const query = { 'status': 'Ikke Fakturert' }
-    const invoicesResult = await getDocuments(query, 'invoices')
+    const invoicesResult = await _getDocuments(query, 'invoices')
 
     if(invoicesResult.status === 404 && invoicesResult.error === 'Fant ingen dokumenter') {
-        logger('info', [logPrefix, `No invoices found with status "Ikke Fakturert" in MongoDB`])
+        _logger('info', [logPrefix, `No invoices found with status "Ikke Fakturert" in MongoDB`])
         return { status: 200, body: 'No invoices to process' }
     }
 
     if (invoicesResult.status !== 200) {
-        logger('error', [logPrefix, 'Error fetching invoices from MongoDB'])
+        _logger('error', [logPrefix, 'Error fetching invoices from MongoDB'])
         throw new Error('Error fetching invoices from MongoDB')
     }
 
@@ -150,20 +168,32 @@ const processInvoices = async () => {
     const extraInvoices = invoices.filter(invoice => invoice.type === 'extraInvoice')
 
     if(buyOutInvoices.length === 0 && extraInvoices.length === 0) {
-        logger('info', [logPrefix, 'No invoices to process'])
+        _logger('info', [logPrefix, 'No invoices to process'])
         return { status: 200, body: 'No invoices to process' }
     }
 
     let buyOutResults
     let extraInvoiceResults
     if(buyOutInvoices.length > 0) {
-        logger('info', [logPrefix, `Processing ${buyOutInvoices.length} buyOut invoices`])
-        buyOutResults = await handleBuyOutInvoice(buyOutInvoices)
+        _logger('info', [logPrefix, `Processing ${buyOutInvoices.length} buyOut invoices`])
+        try {
+            buyOutResults = await _handleBuyOutInvoice(buyOutInvoices)
+        } catch (error) {
+            // Without this, an Xledger import failure aborts status write-back for the whole batch with nobody aware -
+            // the same invoices get resent on the next scheduled run. Catch it here so extraInvoice can still be attempted below.
+            _logger('error', [logPrefix, 'Error processing buyOut invoices', error])
+            await _sendImportFailureAlert('buyOut', error)
+        }
     }
 
     if(extraInvoices.length > 0) {
-        logger('info', [logPrefix, `Processing ${extraInvoices.length} extra invoices`])
-        extraInvoiceResults = await handleExtraInvoice(extraInvoices)
+        _logger('info', [logPrefix, `Processing ${extraInvoices.length} extra invoices`])
+        try {
+            extraInvoiceResults = await _handleExtraInvoice(extraInvoices)
+        } catch (error) {
+            _logger('error', [logPrefix, 'Error processing extra invoices', error])
+            await _sendImportFailureAlert('extraInvoice', error)
+        }
     }
 
     return {

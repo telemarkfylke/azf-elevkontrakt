@@ -12,13 +12,21 @@ const { logger } = require("@vtfk/logger")
 const { generateSerialNumber } = require("../helpers/getSerialNumber")
 
 
-const generateInvoices = async (body, request) => {
+const generateInvoices = async (body, request, deps = {}) => {
+    const {
+        getDocuments: _getDocuments = getDocuments,
+        updateDocument: _updateDocument = updateDocument,
+        postExtraInvoice: _postExtraInvoice = postExtraInvoice,
+        generateSerialNumber: _generateSerialNumber = generateSerialNumber,
+        logger: _logger = logger,
+    } = deps
+
     const logPrefix = 'generateInvoices - processInvoices'
 
-    let customerContract = await getDocuments({_id: new ObjectId(body.customerId)}, body.mainDocumentCollectionSource)
+    let customerContract = await _getDocuments({_id: new ObjectId(body.customerId)}, body.mainDocumentCollectionSource)
 
     if(customerContract.status !== 200 || customerContract.result.length === 0) {
-        logger('error', [`${logPrefix} - ${request.method}`, 'No contract found for the provided customerId'])
+        _logger('error', [`${logPrefix} - ${request.method}`, 'No contract found for the provided customerId'])
         return { status: 404, body: 'Not Found: No contract found for the provided customerId' }
     } else {
         customerContract = customerContract.result[0]
@@ -41,28 +49,28 @@ const generateInvoices = async (body, request) => {
                 if (rate.faktureringsår === buyOutItem.faktureringsår && rate.status.toLowerCase() === 'ikke fakturert') {
                     const rateNumberFull = `rate${i + 1}`
                     const rateNumber = i + 1
-                    const serialNumber = await generateSerialNumber(rateNumber)
+                    const serialNumber = await _generateSerialNumber(rateNumber)
                     const updateRate = {}
                     updateRate[`fakturaInfo.${rateNumberFull}.status`] = 'Fakturert - Utkjøp'
                     updateRate[`fakturaInfo.${rateNumberFull}.løpenummer`] = serialNumber
                     updateRate[`fakturaInfo.${rateNumberFull}.sum`] = buyOutItem.sum
-                    await updateDocument(customerContract._id, updateRate, body.mainDocumentCollectionSource)
+                    await _updateDocument(customerContract._id, updateRate, body.mainDocumentCollectionSource)
                     rate.løpenummer = serialNumber
                     foundRate = rate
                     break
                 } else {
-                    logger('info', [`${logPrefix} - ${request.method}`, `No match for faktureringsår ${buyOutItem.faktureringsår} and status "Ikke Fakturert" in rate: ${JSON.stringify(rate)}`])
+                    _logger('info', [`${logPrefix} - ${request.method}`, `No match for faktureringsår ${buyOutItem.faktureringsår} and status "Ikke Fakturert" in rate: ${JSON.stringify(rate)}`])
                 }
             }
             if (!foundRate) {
-                logger('error', [`${logPrefix} - ${request.method}`, `No rate found for faktureringsår ${buyOutItem.faktureringsår} in the contract's fakturaInfo`])
+                _logger('error', [`${logPrefix} - ${request.method}`, `No rate found for faktureringsår ${buyOutItem.faktureringsår} in the contract's fakturaInfo`])
             } else {
                 ratesToInvoice.push(foundRate)
             }
         }
 
         if(ratesToInvoice.length === 0) {
-            logger('error', [`${logPrefix} - ${request.method}`, 'No rates found for the provided faktureringsår that are not already invoiced'])
+            _logger('error', [`${logPrefix} - ${request.method}`, 'No rates found for the provided faktureringsår that are not already invoiced'])
             return { status: 404, body: 'Not Found: No rates found for the provided faktureringsår that are not already invoiced' }
         }
 
@@ -93,15 +101,27 @@ const generateInvoices = async (body, request) => {
         }
 
         try {
-            await postExtraInvoice(buyOutObject)
+            await _postExtraInvoice(buyOutObject)
         } catch (error) {
-            logger('error', [`${logPrefix} - ${request.method}`, 'Error posting extra invoice', error])
+            _logger('error', [`${logPrefix} - ${request.method}`, 'Error posting extra invoice', error])
             return { status: 500, body: 'Internal Server Error: Error posting buyOut invoice' }
         }
     }
 
     // Handle extraInvoice
     if(body.cart.extraInvoice.length > 0) {
+
+        // Prevent creating a duplicate pending extraInvoice for the same contract (e.g. a double "send" click before the nightly Xledger import runs)
+        const existingPendingExtraInvoice = await _getDocuments({ customerContractId: customerContract._id, type: 'extraInvoice', status: 'Ikke Fakturert' }, 'invoices')
+        if (existingPendingExtraInvoice.status === 200 && existingPendingExtraInvoice.result.length > 0) {
+            _logger('error', [`${logPrefix} - ${request.method}`, `A pending extraInvoice already exists for customerContractId: ${customerContract._id}`])
+            return { status: 409, body: 'Conflict: A pending extra invoice already exists for this contract' }
+        }
+
+        // Generate the serial number once, here, and persist it on the invoice document.
+        // If this were generated again later (in handleExtraInvoice) on every Xledger import run, a retry after a failed
+        // status write-back would mint a brand-new invoice for the same cart instead of resending the same one.
+        const løpenummer = await _generateSerialNumber(4)
 
         extraInvoiceObject = {
             type: 'extraInvoice',
@@ -115,6 +135,7 @@ const generateInvoices = async (body, request) => {
             },
             skoleOrgNr: customerContract.skoleOrgNr,
             status: 'Ikke Fakturert',
+            løpenummer,
             itemsFromCart: body.cart.extraInvoice,
             rates: [],
             invoiceCreatedBy: {
@@ -130,9 +151,9 @@ const generateInvoices = async (body, request) => {
         }
 
         try {
-            await postExtraInvoice(extraInvoiceObject)
+            await _postExtraInvoice(extraInvoiceObject)
         } catch (error) {
-            logger('error', [`${logPrefix} - ${request.method}`, 'Error posting extra invoice', error])
+            _logger('error', [`${logPrefix} - ${request.method}`, 'Error posting extra invoice', error])
             return { status: 500, body: 'Internal Server Error: Error posting extra invoice' }
         }
     }
