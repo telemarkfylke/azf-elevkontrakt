@@ -8,7 +8,7 @@ Downstream jobs need a stable reference to the correct Pureservice user for each
 
 ## How it works
 
-1. Fetches all Pureservice users with `title == "Elev"` using the `/agent/api/user/` endpoint (paginated, 500 per page).
+1. Fetches all Pureservice users with `title == "Elev" || title == "Elev-"` using the `/agent/api/user/` endpoint (paginated, 500 per page).
 2. Builds an in-memory map of `email → pureserviceId` from the linked `emailaddresses` in the response.
 3. Queries all documents from the `kontrakter` &  `historiske-avtaler-pc-ikke-innlevert` collection.
 4. For each contract, looks up `elevInfo.upn` in the email map.

@@ -89,7 +89,10 @@ const updateStudentInfo = async (skipCache, updateOnlyIfPCStatusIsFalse) => {
         const target = determineHistoryMoveTarget(doc)
         if (target === 'historic') {
           try {
-            await moveAndDeleteDocument(doc._id, 'historic', 'regular')
+            const moveResult = await moveAndDeleteDocument(doc._id, 'historic', 'regular')
+            if (moveResult.status !== 200) {
+              throw new Error(moveResult.error || 'moveAndDeleteDocument returned a non-200 status')
+            }
             logger('info', [loggerPrefix, `Document with _id ${doc._id} moved to history database`])
             movedDocuments.push(doc._id)
             report.historyCount += 1

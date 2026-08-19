@@ -6,6 +6,7 @@ const { mongoDB } = require('../../../config')
 // const { getSchoolyear } = require("../helpers/getSchoolyear")
 const { fillDocument, fillManualDocument } = require('../documentSchema.js')
 const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo } = require('./contractChecks.js')
+const { patchUser } = require('./queryPureservice')
 const { ObjectId } = require('mongodb')
 
 const updateFormInfo = async (formInfo) => {
@@ -544,6 +545,18 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
     if (!docToMove) {
       logger('error', [logPrefix, 'Dokument ikke funnet for flytting'])
       return { status: 404, error: 'Dokument ikke funnet for flytting' }
+    }
+
+    // Contracts archived to 'historic' are done for good - no mapper watches that collection,
+    // so reset cf_2 in Pureservice now (it would otherwise stay stale forever) and drop the link.
+    if (targetCollection === 'historic' && docToMove.pureserviceId) {
+      try {
+        await patchUser(docToMove.pureserviceId, { cf_2: '' })
+      } catch (error) {
+        logger('error', [logPrefix, `Failed to reset cf_2 in Pureservice for user ${docToMove.pureserviceId}, aborting move of document _id: ${documentId}`, error])
+        return { status: 502, error: `Failed to reset cf_2 in Pureservice for user ${docToMove.pureserviceId}` }
+      }
+      delete docToMove.pureserviceId
     }
     // Sjekk om deleted collection finnes, hvis ikke, opprett den
     let collection = ''

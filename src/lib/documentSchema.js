@@ -144,7 +144,7 @@ const fillManualDocument = (documentData, archiveData, elevData, ansvarligData, 
     isImportedToXledger: 'false',
     isError: 'Ukjent',
     isUnder18: 'Ukjent',
-    gotAnsvarlig: documentData.foresatt === '' ? 'false' : 'true' || 'Ukjent',
+    gotAnsvarlig: documentData.foresattFnr !== '' ? 'true' : 'false',
     isStudent: documentData?.schoolOrgNumber !== '' ? 'true' : 'false' || 'Ukjent',
     skoleOrgNr: documentData?.schoolOrgNumber || 'Ukjent',
     unSignedskjemaInfo: {
