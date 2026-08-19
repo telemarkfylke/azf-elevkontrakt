@@ -173,7 +173,7 @@ const postFormInfo = async (formInfo, isMock) => {
         await mongoClient.db(mongoDB.dbName).collection(mongoDB.duplicatesCollection).insertOne(document)
         return { status: 409, message: 'Duplikat funnet, kontrakt lagt til duplicates-collection', document }
       }
-      const historicalContract = await findLatestHistoricalContract(fnr, mongoClient)
+      const historicalContract = await findLatestHistoricalContract(fnr, kontraktType, mongoClient)
       if (historicalContract) {
         logger('info', [logPrefix, 'Historisk kontrakt funnet, kopierer fakturaInfo til ny kontrakt', `fnr: ${fnr}`])
         document = applyHistoricalFakturaInfo(document, historicalContract)
@@ -411,7 +411,7 @@ const postManualContract = async (contract, archiveData, isMock) => {
         await mongoClient.db(mongoDB.dbName).collection(mongoDB.duplicatesCollection).insertOne(document)
         return { result: null, document, isDuplicate: true }
       }
-      const historicalContract = await findLatestHistoricalContract(fnr, mongoClient)
+      const historicalContract = await findLatestHistoricalContract(fnr, kontraktType, mongoClient)
       if (historicalContract) {
         logger('info', ['postManualContract', 'Historisk kontrakt funnet, kopierer fakturaInfo til ny kontrakt', `fnr: ${fnr}`])
         document = applyHistoricalFakturaInfo(document, historicalContract)

@@ -68,6 +68,31 @@ const buildFindClient = (documents) => ({
   })
 })
 
+/**
+ * Builds a mock mongoClient that behaves like a real Mongo collection with respect to the
+ * { $regex, $options: 'i' } kontraktType filter findLatestHistoricalContract now uses — i.e. it
+ * actually filters `documents` by matching each one's unSignedskjemaInfo.kontraktType against the
+ * regex, instead of always returning the full canned list regardless of query.
+ */
+const buildFindRegexAwareClient = (documents) => ({
+  db: () => ({
+    collection: () => ({
+      find: (query) => {
+        const { $regex, $options } = query['unSignedskjemaInfo.kontraktType']
+        const regex = new RegExp($regex, $options)
+        const matches = documents.filter(doc => regex.test(doc.unSignedskjemaInfo?.kontraktType))
+        return {
+          sort: () => ({
+            limit: () => ({
+              toArray: async () => matches
+            })
+          })
+        }
+      }
+    })
+  })
+})
+
 // =====================================================================
 // applyHistoricalFakturaInfo — pure function
 // =====================================================================
@@ -339,13 +364,13 @@ describe('findLatestHistoricalContract', () => {
   test('returns the historical contract when one exists', async () => {
     const doc = { _id: 'abc', elevInfo: { fnr: '12345678901' }, generatedTimeStamp: '2023-01-01T00:00:00Z' }
     const client = buildFindClient([doc])
-    const result = await findLatestHistoricalContract('12345678901', client)
+    const result = await findLatestHistoricalContract('12345678901', 'Leieavtale', client)
     assert.deepEqual(result, doc)
   })
 
   test('returns null when no historical contract found', async () => {
     const client = buildFindClient([])
-    const result = await findLatestHistoricalContract('12345678901', client)
+    const result = await findLatestHistoricalContract('12345678901', 'Leieavtale', client)
     assert.equal(result, null)
   })
 
@@ -357,8 +382,40 @@ describe('findLatestHistoricalContract', () => {
     const newer = { _id: 'new', elevInfo: { fnr: '12345678901' }, generatedTimeStamp: '2024-06-01T00:00:00Z' }
     // Simulate DB returning the cursor sorted desc: newest first
     const client = buildFindClient([newer, older])
-    const result = await findLatestHistoricalContract('12345678901', client)
+    const result = await findLatestHistoricalContract('12345678901', 'Leieavtale', client)
     assert.equal(result._id, 'new')
+  })
+
+  // Regression tests for the reported bug: a student signing a new contract of one kontraktType
+  // must never receive fakturaInfo merged from a historical contract of a DIFFERENT kontraktType
+  // (e.g. a "Leieavtale" must not inherit a "Låneavtale"'s never-invoiced fakturaInfo, or vice versa).
+  test('returns null when the only historical contract is of a different kontraktType', async () => {
+    const laan = { _id: 'laan-1', unSignedskjemaInfo: { kontraktType: 'Låneavtale' }, generatedTimeStamp: '2024-01-01T00:00:00Z' }
+    const client = buildFindRegexAwareClient([laan])
+    const result = await findLatestHistoricalContract('12345678901', 'Leieavtale', client)
+    assert.equal(result, null)
+  })
+
+  test('returns only the matching-kontraktType contract, even if a different-type contract is more recent', async () => {
+    const leie = { _id: 'leie-1', unSignedskjemaInfo: { kontraktType: 'Leieavtale' }, generatedTimeStamp: '2022-01-01T00:00:00Z' }
+    const laanNewer = { _id: 'laan-1', unSignedskjemaInfo: { kontraktType: 'Låneavtale' }, generatedTimeStamp: '2024-06-01T00:00:00Z' }
+    const client = buildFindRegexAwareClient([leie, laanNewer])
+    const result = await findLatestHistoricalContract('12345678901', 'Leieavtale', client)
+    assert.equal(result._id, 'leie-1')
+  })
+
+  test('matches kontraktType case-insensitively (stored lowercase, checked capitalized)', async () => {
+    const leie = { _id: 'leie-1', unSignedskjemaInfo: { kontraktType: 'leieavtale' }, generatedTimeStamp: '2024-01-01T00:00:00Z' }
+    const client = buildFindRegexAwareClient([leie])
+    const result = await findLatestHistoricalContract('12345678901', 'Leieavtale', client)
+    assert.equal(result._id, 'leie-1')
+  })
+
+  test('does not throw or misbehave when kontraktType contains regex special characters', async () => {
+    const leie = { _id: 'leie-1', unSignedskjemaInfo: { kontraktType: 'Leieavtale (E)' }, generatedTimeStamp: '2024-01-01T00:00:00Z' }
+    const client = buildFindRegexAwareClient([leie])
+    assert.equal((await findLatestHistoricalContract('12345678901', 'Leieavtale (E)', client))._id, 'leie-1')
+    assert.equal(await findLatestHistoricalContract('12345678901', 'Leieavtale', client), null)
   })
 })
 

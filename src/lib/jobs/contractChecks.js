@@ -3,6 +3,11 @@
 const { mongoDB } = require('../../../config')
 const { getBillingYear } = require('../documentSchema.js')
 
+// kontraktType is matched case-insensitively since the same contract type has historically
+// been stored with inconsistent casing (e.g. 'Leieavtale' vs 'leieavtale'), see also the
+// $in: ['Leieavtale', 'leieavtale'] workarounds used across miscCleanUpJobs.js and xledgerInvoiceImport.js.
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
 /**
  * Checks whether an active contract of the same type already exists for the student
  * in either the 'kontrakter' or 'historiske-avtaler-pc-ikke-innlevert' collection.
@@ -12,11 +17,7 @@ const { getBillingYear } = require('../documentSchema.js')
  * @returns {Promise<boolean>}
  */
 const checkIsDuplicate = async (fnr, kontraktType, mongoClient) => {
-  // kontraktType is matched case-insensitively since the same contract type has historically
-  // been stored with inconsistent casing (e.g. 'Leieavtale' vs 'leieavtale'), see also the
-  // $in: ['Leieavtale', 'leieavtale'] workarounds used across miscCleanUpJobs.js and xledgerInvoiceImport.js.
-  const escapedKontraktType = kontraktType.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const query = { 'elevInfo.fnr': fnr, 'unSignedskjemaInfo.kontraktType': { $regex: `^${escapedKontraktType}$`, $options: 'i' } }
+  const query = { 'elevInfo.fnr': fnr, 'unSignedskjemaInfo.kontraktType': { $regex: `^${escapeRegex(kontraktType)}$`, $options: 'i' } }
   const [inKontrakter, inPcIkkeInnlevert] = await Promise.all([
     mongoClient.db(mongoDB.dbName).collection(mongoDB.contractsCollection).findOne(query),
     mongoClient.db(mongoDB.dbName).collection(mongoDB.historicPcNotDeliveredCollection).findOne(query)
@@ -25,16 +26,20 @@ const checkIsDuplicate = async (fnr, kontraktType, mongoClient) => {
 }
 
 /**
- * Finds the most recent historical contract for a student in 'historiske-avtaler'.
+ * Finds the most recent historical contract of the same kontraktType for a student in
+ * 'historiske-avtaler'. Scoped to kontraktType (matched case-insensitively, same as
+ * checkIsDuplicate) so a contract of one type never becomes a fakturaInfo merge source for a
+ * contract of a different type (e.g. a "Låneavtale" must never seed a "Leieavtale"'s fakturaInfo).
  * @param {string} fnr - Student national ID number
+ * @param {string} kontraktType - Contract type (e.g. "Leieavtale" or "Låneavtale")
  * @param {import('mongodb').MongoClient} mongoClient
  * @returns {Promise<Object|null>}
  */
-const findLatestHistoricalContract = async (fnr, mongoClient) => {
+const findLatestHistoricalContract = async (fnr, kontraktType, mongoClient) => {
   const result = await mongoClient
     .db(mongoDB.dbName)
     .collection(mongoDB.historicCollection)
-    .find({ 'elevInfo.fnr': fnr })
+    .find({ 'elevInfo.fnr': fnr, 'unSignedskjemaInfo.kontraktType': { $regex: `^${escapeRegex(kontraktType)}$`, $options: 'i' } })
     .sort({ generatedTimeStamp: -1 })
     .limit(1)
     .toArray()
