@@ -6,7 +6,7 @@ const mappers = require('./mappers')
  * Forwards a single change stream event to Pureservice.
  * Auth is handled by queryPureservice (API key, rate-limit retry).
  *
- * Returns without error if the mapper returns null (document has no pureserviceId yet).
+ * Returns without error if the mapper returns { skip: reason } — logging the reason.
  * Throws if no mapper exists for the collection — that indicates a misconfiguration
  * (CHANGE_STREAM_WATCH_COLLECTIONS should only list collections with a registered mapper).
  *
@@ -24,8 +24,8 @@ const forwardChange = async (changeEvent) => {
   logger('info', ['forwardChange', `updatedFields keys: ${Object.keys(changeEvent.updateDescription?.updatedFields ?? {}).join(', ')}`])
 
   const result = mapper(changeEvent.fullDocument, changeEvent)
-  if (!result) {
-    logger('info', ['forwardChange', `Skipping event for collection "${collection}" — mapper returned null (pureserviceId not set?)`])
+  if (result.skip) {
+    logger('info', ['forwardChange', `Skipping event for collection "${collection}" — ${result.skip}`])
     return
   }
 

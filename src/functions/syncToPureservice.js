@@ -53,7 +53,7 @@ app.http('syncToPureservice', {
 
       for (const doc of documents) {
         const result = mapper(doc)
-        if (!result) {
+        if (result.skip) {
           counts.skipped++
           continue
         }
