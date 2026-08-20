@@ -22,6 +22,34 @@ const getBillingYear = (rate) => {
 }
 
 /**
+ * Builds a fresh fakturaInfo object for a brand-new contract of the given kontraktType, with no
+ * contract history to carry forward — the same shape fillDocument/fillManualDocument give a new
+ * document at creation time. Used by the fakturaInfo/kontraktType mismatch repair job to rebuild
+ * fakturaInfo for a corrupted document when no legitimate same-type historical contract exists to
+ * merge from instead.
+ *
+ * For Leieavtale, løpenummer/sum/faktureringsDato/betaltDato are set to 'Ukjent' rather than left
+ * undefined/absent, so the frontend always finds these fields present on a rate object.
+ * @param {string} kontraktType - Contract type (e.g. "Leieavtale" or "Låneavtale")
+ * @returns {Object} - fakturaInfo with rate1/2/3 in the canonical "just created" shape
+ */
+const buildFreshFakturaInfo = (kontraktType) => {
+  const isLeieavtale = kontraktType?.toLowerCase() === 'leieavtale'
+  const buildRate = (rate) => ({
+    faktureringsår: isLeieavtale ? getBillingYear(rate) : 'Utlån faktureres ikke',
+    faktureringsDato: isLeieavtale ? 'Ukjent' : undefined,
+    status: isLeieavtale ? 'Ikke Fakturert' : 'Utlån faktureres ikke',
+    løpenummer: isLeieavtale ? 'Ukjent' : undefined,
+    ...(isLeieavtale ? { sum: 'Ukjent', betaltDato: 'Ukjent' } : {})
+  })
+  return {
+    rate1: buildRate(1),
+    rate2: buildRate(2),
+    rate3: buildRate(3)
+  }
+}
+
+/**
  * Fills a document object with provided form, student, and responsible data.
  *
  * @param {Object} formInfo - Information about the form.
@@ -395,6 +423,7 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
 }
 module.exports = {
   getBillingYear,
+  buildFreshFakturaInfo,
   fillDocument,
   fillManualDocument,
   digitrollImportDocument

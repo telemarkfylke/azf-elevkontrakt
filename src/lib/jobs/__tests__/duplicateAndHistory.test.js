@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, markAsSigned, determineHistoryMoveTarget } = require('../contractChecks.js')
+const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, markAsSigned, determineHistoryMoveTarget, getFakturaInfoMismatches } = require('../contractChecks.js')
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -101,6 +101,31 @@ describe('applyHistoricalFakturaInfo', () => {
   test('returns document unchanged when historicalContract is null', () => {
     const doc = makeDocument()
     assert.deepEqual(applyHistoricalFakturaInfo(doc, null), doc)
+  })
+
+  // Guardrail regression test — the original reported bug: a document must never be merged with a
+  // historicalContract of a different kontraktType, even if some future caller passes one by mistake.
+  test('refuses to merge and returns document unchanged when kontraktType differs from historicalContract', () => {
+    const doc = makeDocument({ unSignedskjemaInfo: { kontraktType: 'Leieavtale' } })
+    const historicalContract = {
+      unSignedskjemaInfo: { kontraktType: 'Låneavtale' },
+      fakturaInfo: {
+        rate1: { status: 'Utlån faktureres ikke', faktureringsår: 'Utlån faktureres ikke' },
+        rate2: { status: 'Utlån faktureres ikke', faktureringsår: 'Utlån faktureres ikke' },
+        rate3: { status: 'Utlån faktureres ikke', faktureringsår: 'Utlån faktureres ikke' }
+      }
+    }
+    assert.deepEqual(applyHistoricalFakturaInfo(doc, historicalContract), doc)
+  })
+
+  test('matches kontraktType case-insensitively before merging (does not refuse a legitimate same-type merge)', () => {
+    const doc = makeDocument({ unSignedskjemaInfo: { kontraktType: 'leieavtale' } })
+    const historicalContract = {
+      unSignedskjemaInfo: { kontraktType: 'Leieavtale' },
+      fakturaInfo: makeHistoricalFakturaInfo()
+    }
+    const result = applyHistoricalFakturaInfo(doc, historicalContract)
+    assert.equal(result.fakturaInfo.rate1.løpenummer, 'JOT-001')
   })
 
   test('returns document unchanged when historicalContract has no fakturaInfo', () => {
@@ -416,6 +441,78 @@ describe('findLatestHistoricalContract', () => {
     const client = buildFindRegexAwareClient([leie])
     assert.equal((await findLatestHistoricalContract('12345678901', 'Leieavtale (E)', client))._id, 'leie-1')
     assert.equal(await findLatestHistoricalContract('12345678901', 'Leieavtale', client), null)
+  })
+})
+
+// =====================================================================
+// getFakturaInfoMismatches — pure function, the Layer 2 guardrail's detection logic
+// =====================================================================
+
+describe('getFakturaInfoMismatches', () => {
+  const makeRate = (status, faktureringsår) => ({ status, faktureringsår })
+
+  test('returns no issues for a legitimate Leieavtale (Ikke Fakturert, real billing years)', () => {
+    const doc = makeDocument({ unSignedskjemaInfo: { kontraktType: 'Leieavtale' } })
+    assert.deepEqual(getFakturaInfoMismatches(doc), [])
+  })
+
+  test('returns no issues for a legitimate Låneavtale (canonical Utlån faktureres ikke on all rates)', () => {
+    const doc = makeDocument({
+      unSignedskjemaInfo: { kontraktType: 'Låneavtale' },
+      fakturaInfo: {
+        rate1: makeRate('Utlån faktureres ikke', 'Utlån faktureres ikke'),
+        rate2: makeRate('Utlån faktureres ikke', 'Utlån faktureres ikke'),
+        rate3: makeRate('Utlån faktureres ikke', 'Utlån faktureres ikke')
+      }
+    })
+    assert.deepEqual(getFakturaInfoMismatches(doc), [])
+  })
+
+  test('flags a Leieavtale rate whose status is Utlån faktureres ikke (inherited from a Låneavtale)', () => {
+    const doc = makeDocument({
+      unSignedskjemaInfo: { kontraktType: 'Leieavtale' },
+      fakturaInfo: {
+        rate1: makeRate('Utlån faktureres ikke', 'Utlån faktureres ikke'),
+        rate2: makeRate('Ikke Fakturert', '2024'),
+        rate3: makeRate('Ikke Fakturert', '2025')
+      }
+    })
+    const issues = getFakturaInfoMismatches(doc)
+    assert.equal(issues.length, 1)
+    assert.equal(issues[0].rateKey, 'rate1')
+  })
+
+  test('flags a Leieavtale rate whose faktureringsår is Utlån faktureres ikke even if status looks normal', () => {
+    const doc = makeDocument({
+      unSignedskjemaInfo: { kontraktType: 'Leieavtale' },
+      fakturaInfo: {
+        rate1: makeRate('Ikke Fakturert', 'Utlån faktureres ikke'),
+        rate2: makeRate('Ikke Fakturert', '2024'),
+        rate3: makeRate('Ikke Fakturert', '2025')
+      }
+    })
+    const issues = getFakturaInfoMismatches(doc)
+    assert.equal(issues.length, 1)
+    assert.equal(issues[0].rateKey, 'rate1')
+  })
+
+  test('flags a Låneavtale rate that has a real status/faktureringsår (inherited from a Leieavtale)', () => {
+    const doc = makeDocument({
+      unSignedskjemaInfo: { kontraktType: 'Låneavtale' },
+      fakturaInfo: {
+        rate1: makeRate('Ikke Fakturert', '2024'),
+        rate2: makeRate('Utlån faktureres ikke', 'Utlån faktureres ikke'),
+        rate3: makeRate('Utlån faktureres ikke', 'Utlån faktureres ikke')
+      }
+    })
+    const issues = getFakturaInfoMismatches(doc)
+    assert.equal(issues.length, 1)
+    assert.equal(issues[0].rateKey, 'rate1')
+  })
+
+  test('returns no issues for an unrecognized/missing kontraktType (not this bug\'s concern)', () => {
+    const doc = makeDocument({ unSignedskjemaInfo: { kontraktType: 'Ukjent' } })
+    assert.deepEqual(getFakturaInfoMismatches(doc), [])
   })
 })
 

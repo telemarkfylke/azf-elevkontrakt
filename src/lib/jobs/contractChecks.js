@@ -1,5 +1,6 @@
 'use strict'
 
+const { logger } = require('@vtfk/logger')
 const { mongoDB } = require('../../../config')
 const { getBillingYear } = require('../documentSchema.js')
 
@@ -50,12 +51,26 @@ const findLatestHistoricalContract = async (fnr, kontraktType, mongoClient) => {
  * Copies fakturaInfo from a historical contract onto the new document.
  * For each rate where status is 'Ikke Fakturert', recalculates faktureringsår
  * based on the current date so the new contract has the correct billing years.
+ *
+ * Refuses to merge (returns document unchanged) if document and historicalContract have
+ * different kontraktType (matched case-insensitively, same as checkIsDuplicate/
+ * findLatestHistoricalContract) — a second, independent guard against the cross-type fakturaInfo
+ * corruption bug (contractChecks.js, fixed 2026-08-19), in case findLatestHistoricalContract (or
+ * some future caller) is ever given a mismatched historicalContract by mistake.
  * @param {Object} document - New contract document
  * @param {Object} historicalContract - Historical contract to copy fakturaInfo from
  * @returns {Object} - Updated document with merged fakturaInfo
  */
 const applyHistoricalFakturaInfo = (document, historicalContract) => {
   if (!historicalContract?.fakturaInfo) return document
+
+  const documentKontraktType = document.unSignedskjemaInfo?.kontraktType?.toLowerCase()
+  const historicalKontraktType = historicalContract.unSignedskjemaInfo?.kontraktType?.toLowerCase()
+  if (documentKontraktType && historicalKontraktType && documentKontraktType !== historicalKontraktType) {
+    logger('error', ['applyHistoricalFakturaInfo', 'Refusing to merge fakturaInfo across mismatched kontraktType', `fnr: ${document.elevInfo?.fnr}`, `document kontraktType: ${documentKontraktType}`, `historicalContract kontraktType: ${historicalKontraktType}`])
+    return document
+  }
+
   const rateKeys = ['rate1', 'rate2', 'rate3']
   const mergedFakturaInfo = {}
   let unpaidCount = 0
@@ -91,6 +106,44 @@ const markAsSigned = (document) => {
   }
 }
 
+/**
+ * Checks a single fakturaInfo rate object against the invariant for the given kontraktType: a
+ * Låneavtale rate must always have both status and faktureringsår set to 'Utlån faktureres ikke',
+ * and a Leieavtale rate must never have either set to that value.
+ * Returns null if the rate looks legitimate, or a short reason string if it doesn't.
+ */
+const checkRateAgainstKontraktType = (rate, normalizedKontraktType) => {
+  if (!rate) return null
+  if (normalizedKontraktType === 'låneavtale') {
+    if (rate.status !== 'Utlån faktureres ikke') return `status is '${rate.status}', expected 'Utlån faktureres ikke'`
+    if (rate.faktureringsår !== 'Utlån faktureres ikke') return `faktureringsår is '${rate.faktureringsår}', expected 'Utlån faktureres ikke'`
+    return null
+  }
+  if (normalizedKontraktType === 'leieavtale') {
+    if (rate.status === 'Utlån faktureres ikke') return "status is 'Utlån faktureres ikke', which a Leieavtale rate should never have"
+    if (rate.faktureringsår === 'Utlån faktureres ikke') return "faktureringsår is 'Utlån faktureres ikke', which a Leieavtale rate should never have"
+    return null
+  }
+  return null
+}
+
+/**
+ * Checks a document's fakturaInfo.rate1/2/3 against the invariant for its kontraktType (see
+ * checkRateAgainstKontraktType). Used both by the fakturaInfo/kontraktType mismatch audit
+ * (findFakturaInfoTypeMismatches, miscCleanUpJobs.js) and as a final guard before a document is
+ * ever written to 'kontrakter' (postFormInfo/postManualContract, queryMongoDB.js), so a mismatched
+ * document can never be persisted silently regardless of how the mismatch happened.
+ * @param {Object} document
+ * @returns {Array<{rateKey: string, reason: string}>} - Empty if the document looks legitimate
+ */
+const getFakturaInfoMismatches = (document) => {
+  const normalizedKontraktType = document.unSignedskjemaInfo?.kontraktType?.toLowerCase()
+  if (normalizedKontraktType !== 'leieavtale' && normalizedKontraktType !== 'låneavtale') return []
+  return ['rate1', 'rate2', 'rate3']
+    .map(rateKey => ({ rateKey, reason: checkRateAgainstKontraktType(document.fakturaInfo?.[rateKey], normalizedKontraktType) }))
+    .filter(({ reason }) => reason !== null)
+}
+
 const RETURNED_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Ikke Fakturert', 'Utlån faktureres ikke', 'Kreditert']
 const BOUGHT_OUT_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Utlån faktureres ikke', 'Kreditert']
 
@@ -117,5 +170,6 @@ module.exports = {
   findLatestHistoricalContract,
   applyHistoricalFakturaInfo,
   markAsSigned,
-  determineHistoryMoveTarget
+  determineHistoryMoveTarget,
+  getFakturaInfoMismatches
 }

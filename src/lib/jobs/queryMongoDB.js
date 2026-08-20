@@ -5,7 +5,7 @@ const { getMongoClient } = require('../auth/mongoClient.js')
 const { mongoDB } = require('../../../config')
 // const { getSchoolyear } = require("../helpers/getSchoolyear")
 const { fillDocument, fillManualDocument } = require('../documentSchema.js')
-const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo } = require('./contractChecks.js')
+const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, getFakturaInfoMismatches } = require('./contractChecks.js')
 const { patchUser } = require('./queryPureservice')
 const { ObjectId } = require('mongodb')
 
@@ -177,6 +177,15 @@ const postFormInfo = async (formInfo, isMock) => {
       if (historicalContract) {
         logger('info', [logPrefix, 'Historisk kontrakt funnet, kopierer fakturaInfo til ny kontrakt', `fnr: ${fnr}`])
         document = applyHistoricalFakturaInfo(document, historicalContract)
+      }
+
+      // Siste sikkerhetssjekk før dokumentet kan postes til kontrakter: fakturaInfo skal alltid
+      // matche kontraktType. Poster til error-collection for manuell gjennomgang istedenfor å
+      // risikere å poste et korrupt dokument til kontrakter, uansett hva som forårsaket avviket.
+      const fakturaInfoMismatches = getFakturaInfoMismatches(document)
+      if (fakturaInfoMismatches.length > 0) {
+        logger('error', [logPrefix, 'fakturaInfo matcher ikke kontraktType, poster til error-collection for manuell gjennomgang', `fnr: ${fnr}`, `kontraktType: ${kontraktType}`, JSON.stringify(fakturaInfoMismatches)])
+        document.isNonFixAbleError = 'true'
       }
     }
   }
@@ -415,6 +424,16 @@ const postManualContract = async (contract, archiveData, isMock) => {
       if (historicalContract) {
         logger('info', ['postManualContract', 'Historisk kontrakt funnet, kopierer fakturaInfo til ny kontrakt', `fnr: ${fnr}`])
         document = applyHistoricalFakturaInfo(document, historicalContract)
+      }
+
+      // Siste sikkerhetssjekk før dokumentet kan postes til kontrakter: fakturaInfo skal alltid
+      // matche kontraktType. Poster til error-collection for manuell gjennomgang istedenfor å
+      // risikere å poste et korrupt dokument til kontrakter, uansett hva som forårsaket avviket.
+      const fakturaInfoMismatches = getFakturaInfoMismatches(document)
+      if (fakturaInfoMismatches.length > 0) {
+        logger('error', ['postManualContract', 'fakturaInfo matcher ikke kontraktType, poster til error-collection for manuell gjennomgang', `fnr: ${fnr}`, `kontraktType: ${kontraktType}`, JSON.stringify(fakturaInfoMismatches)])
+        await mongoClient.db(mongoDB.dbName).collection(mongoDB.errorCollection).insertOne(document)
+        return { result: null, document, isFakturaInfoMismatch: true }
       }
     }
   }
