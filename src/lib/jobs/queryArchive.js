@@ -76,7 +76,8 @@ const archiveDocument = async (payload) => {
   try {
     data = await axios.post(`${archive.url}/archive`, payloadToArchive, { headers: { Authorization: `Bearer ${accessToken}` } })
   } catch (error) {
-    logger('error', ['archive', error])
+    logger('error', ['archive', error.message, `status: ${error.response?.status}`, `response: ${JSON.stringify(error.response?.data)}`])
+    throw new Error('Internal server error')
   }
   return data.data
 }
@@ -92,7 +93,7 @@ const syncPrivatePerson = async (ssn) => {
   try {
     data = await axios.post(`${archive.url}/SyncPrivatePerson`, body, { headers: { Authorization: `Bearer ${accessToken}` } })
   } catch (error) {
-    logger('error', ['syncPrivatePerson', error])
+    logger('error', ['syncPrivatePerson', error.message, `status: ${error.response?.status}`, `response: ${JSON.stringify(error.response?.data)}`])
     throw new Error('Internal server error')
   }
   return data?.data || data // Return the data or the data property if it exists
@@ -113,6 +114,18 @@ const syncElevMappe = async (ssn) => {
   //   "zipCode": "",
   //   "zipPlace": ""
   // }
+  // OR this structure if you want to test with a real person in the archive:
+  // const body =  { 
+  //  "ssn": "ssn",
+  //  "name": "name som i p360", // Either name, or firstName and lastName
+  //  "firstName": "fname som i p360",
+  //  "lastName": "lastname som i p360",
+  //  "streetAddress": "adresse som i p360",
+  //  "zipCode": "zipcode som i p360",
+  //  "zipPlace": "zipplace som i p360",
+  //  "manualData": true
+  // }
+
   const body = {
     ssn,
     forceUpdate: true // Set to true to force update the person in the archive
@@ -121,7 +134,7 @@ const syncElevMappe = async (ssn) => {
   try {
     data = await axios.post(`${archive.url}/SyncElevmappe`, body, { headers: { Authorization: `Bearer ${accessToken}` } })
   } catch (error) {
-    logger('error', ['syncElevMappe', error])
+    logger('error', ['syncElevMappe', error.message, `status: ${error.response?.status}`, `response: ${JSON.stringify(error.response?.data)}`])
     throw new Error('Internal server error')
   }
   return data?.data || data // Return the data or the data property if it exists
