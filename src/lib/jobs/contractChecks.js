@@ -3,6 +3,7 @@
 const { logger } = require('@vtfk/logger')
 const { mongoDB } = require('../../../config')
 const { getBillingYear } = require('../documentSchema.js')
+const { maskFnr } = require('../helpers/maskFnr')
 
 // kontraktType is matched case-insensitively since the same contract type has historically
 // been stored with inconsistent casing (e.g. 'Leieavtale' vs 'leieavtale'), see also the
@@ -67,7 +68,7 @@ const applyHistoricalFakturaInfo = (document, historicalContract) => {
   const documentKontraktType = document.unSignedskjemaInfo?.kontraktType?.toLowerCase()
   const historicalKontraktType = historicalContract.unSignedskjemaInfo?.kontraktType?.toLowerCase()
   if (documentKontraktType && historicalKontraktType && documentKontraktType !== historicalKontraktType) {
-    logger('error', ['applyHistoricalFakturaInfo', 'Refusing to merge fakturaInfo across mismatched kontraktType', `fnr: ${document.elevInfo?.fnr}`, `document kontraktType: ${documentKontraktType}`, `historicalContract kontraktType: ${historicalKontraktType}`])
+    logger('error', ['applyHistoricalFakturaInfo', 'Refusing to merge fakturaInfo across mismatched kontraktType', `fnr: ${maskFnr(document.elevInfo?.fnr)}`, `document kontraktType: ${documentKontraktType}`, `historicalContract kontraktType: ${historicalKontraktType}`])
     return document
   }
 

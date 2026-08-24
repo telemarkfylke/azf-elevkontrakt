@@ -4,6 +4,7 @@ const { validateRoles } = require('../lib/auth/validateRoles')
 const { archiveDocument } = require('../lib/jobs/queryArchive')
 const { logger } = require('@vtfk/logger')
 const { ObjectId } = require('mongodb')
+const { sanitizeErrorForLogging } = require('../lib/helpers/maskFnr')
 
 app.http('handleDbRequest', {
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -55,7 +56,7 @@ app.http('handleDbRequest', {
         const result = await getDocuments(query, isMock ? 'mock' : fetchDocumentsFromTargetCollection)
         return { status: 200, jsonBody: result }
       } catch (error) {
-        logger('error', [logPrefix, 'Error fetching documents from database', error])
+        logger('error', [logPrefix, 'Error fetching documents from database', sanitizeErrorForLogging(error)])
         return { status: 500, error }
       }
     } else if (request.method === 'POST' || request.method === 'PUT') {
@@ -88,7 +89,7 @@ app.http('handleDbRequest', {
                  * }
                  */
               } catch (error) {
-                logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', error])
+                logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
               }
               // Create a new document with the provided data that can be used to update the database
@@ -97,7 +98,7 @@ app.http('handleDbRequest', {
               try {
                 manualContract = await postManualContract(jsonBody, archive)
               } catch (error) {
-                logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument', error])
+                logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
               }
               return { status: 200, jsonBody: manualContract }
@@ -108,7 +109,7 @@ app.http('handleDbRequest', {
                 const result = await postFormInfo(jsonBody)
                 return { status: 200, jsonBody: result }
               } catch (error) {
-                logger('error', [logPrefix, `Error ved oppretting av dokument med UUID:${jsonBody.parseXml?.result?.ArchiveData?.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`, error])
+                logger('error', [logPrefix, `Error ved oppretting av dokument med UUID:${jsonBody.parseXml?.result?.ArchiveData?.uuid}, refId: ${jsonBody.refId} og skjema navn: ${jsonBody.acosName}`, sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
               }
             }
@@ -139,7 +140,7 @@ app.http('handleDbRequest', {
                 logger('info', [logPrefix, `Oppdaterte PC status for kontrakt _id: ${jsonBody.contractID}`])
                 return { status: 200, jsonBody: result }
               } catch (error) {
-                logger('error', [logPrefix, `Error ved innlevering eller utlevering av PC, kontrakt _id: ${jsonBody.contractID}`, error])
+                logger('error', [logPrefix, `Error ved innlevering eller utlevering av PC, kontrakt _id: ${jsonBody.contractID}`, sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
               }
             } else if (jsonBody.contractID && jsonBody.updateData === true) {
@@ -169,7 +170,7 @@ app.http('handleDbRequest', {
                 const result = await updateDocument(jsonBody.contractID, updateData, fetchDocumentsFromTargetCollection === 'pcIkkeInnlevert' ? 'pcIkkeInnlevert' : 'regularWithChangeLog')
                 return { status: 200, jsonBody: result }
               } catch (error) {
-                logger('error', [logPrefix, `Error ved oppdatering av dokument med kontraktID: ${jsonBody.contractID}`, error])
+                logger('error', [logPrefix, `Error ved oppdatering av dokument med kontraktID: ${jsonBody.contractID}`, sanitizeErrorForLogging(error)])
                 return { status: 500, body: 'Internal server error' }
               }
             } else {
@@ -179,7 +180,7 @@ app.http('handleDbRequest', {
                 const result = await updateFormInfo(jsonBody)
                 return { status: 200, jsonBody: result }
               } catch (error) {
-                logger('error', [logPrefix, `Error ved oppdatering av dokument med UUID: ${jsonBody.parseXml.result.ArchiveData.uuid}`, error])
+                logger('error', [logPrefix, `Error ved oppdatering av dokument med UUID: ${jsonBody.parseXml.result.ArchiveData.uuid}`, sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
               }
             }

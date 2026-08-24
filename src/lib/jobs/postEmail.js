@@ -1,6 +1,7 @@
 const { logger } = require('@vtfk/logger')
 const { email } = require('../../../config.js')
 const { default: axios } = require('axios')
+const { sanitizeErrorForLogging } = require('../helpers/maskFnr')
 require('dotenv').config()
 
 /**
@@ -54,7 +55,7 @@ const sendEmail = async (to, from, subject, html, attachments) => {
     })
     return response.data
   } catch (error) {
-    logger('error', 'Error sending email', error)
+    logger('error', ['sendEmail', 'Error sending email', sanitizeErrorForLogging(error)])
     throw error
   }
 }

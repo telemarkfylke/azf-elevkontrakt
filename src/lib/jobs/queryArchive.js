@@ -3,6 +3,7 @@ const { archive } = require('../../../config')
 const getAccessToken = require('../auth/get-endtraid-token')
 const { logger } = require('@vtfk/logger')
 const { schoolInfoList } = require('../datasources/tfk-schools')
+const { sanitizeErrorForLogging } = require('../helpers/maskFnr')
 
 // Archive the document
 /**
@@ -76,7 +77,7 @@ const archiveDocument = async (payload) => {
   try {
     data = await axios.post(`${archive.url}/archive`, payloadToArchive, { headers: { Authorization: `Bearer ${accessToken}` } })
   } catch (error) {
-    logger('error', ['archive', error.message, `status: ${error.response?.status}`, `response: ${JSON.stringify(error.response?.data)}`])
+    logger('error', ['archive', sanitizeErrorForLogging(error)])
     throw new Error('Internal server error')
   }
   return data.data
@@ -93,7 +94,7 @@ const syncPrivatePerson = async (ssn) => {
   try {
     data = await axios.post(`${archive.url}/SyncPrivatePerson`, body, { headers: { Authorization: `Bearer ${accessToken}` } })
   } catch (error) {
-    logger('error', ['syncPrivatePerson', error.message, `status: ${error.response?.status}`, `response: ${JSON.stringify(error.response?.data)}`])
+    logger('error', ['syncPrivatePerson', sanitizeErrorForLogging(error)])
     throw new Error('Internal server error')
   }
   return data?.data || data // Return the data or the data property if it exists
@@ -134,7 +135,7 @@ const syncElevMappe = async (ssn) => {
   try {
     data = await axios.post(`${archive.url}/SyncElevmappe`, body, { headers: { Authorization: `Bearer ${accessToken}` } })
   } catch (error) {
-    logger('error', ['syncElevMappe', error.message, `status: ${error.response?.status}`, `response: ${JSON.stringify(error.response?.data)}`])
+    logger('error', ['syncElevMappe', sanitizeErrorForLogging(error)])
     throw new Error('Internal server error')
   }
   return data?.data || data // Return the data or the data property if it exists

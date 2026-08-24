@@ -2,6 +2,7 @@ const axios = require('axios')
 const { fint } = require('../../../config')
 const { logger } = require('@vtfk/logger')
 const getMsalToken = require('../auth/get-endtraid-token')
+const { sanitizeErrorForLogging } = require('../helpers/maskFnr')
 
 const queryFINT = async (request) => {
   const accessToken = await getMsalToken(fint.scope)
@@ -19,10 +20,10 @@ const queryFINT = async (request) => {
     return fintData.data
   } catch (error) {
     if (error.status === 404) {
-      logger('info', ['queryFINT', 'Fant ikke data i FINT', error])
+      logger('info', ['queryFINT', 'Fant ikke data i FINT', sanitizeErrorForLogging(error)])
       return { status: 404, message: 'Personen er ikke en student' }
     }
-    logger('error', ['queryFINT', 'Klarte ikke å hente data fra FINT', error])
+    logger('error', ['queryFINT', 'Klarte ikke å hente data fra FINT', sanitizeErrorForLogging(error)])
     return { status: 500, message: 'Internal server error' }
   }
 }

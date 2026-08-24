@@ -2,6 +2,7 @@ const axios = require('axios')
 const { freg } = require('../../../config')
 const { logger } = require('@vtfk/logger')
 const getMsalToken = require('../auth/get-endtraid-token')
+const { sanitizeErrorForLogging } = require('../helpers/maskFnr')
 
 const queryFREG = async (request) => {
   const accessToken = await getMsalToken(freg.scope)
@@ -19,7 +20,7 @@ const queryFREG = async (request) => {
     const fregData = await axios.request(fregRequest)
     return fregData.data
   } catch (error) {
-    logger('error', ['queryFREG', 'Klarte ikke å hente data fra FREG', error])
+    logger('error', ['queryFREG', 'Klarte ikke å hente data fra FREG', sanitizeErrorForLogging(error)])
     return { status: error?.response?.status || 500, message: 'Internal server error' }
   }
 }

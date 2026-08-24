@@ -1,6 +1,7 @@
 const axios = require('axios')
 const { krr } = require('../../../config')
 const { logger } = require('@vtfk/logger')
+const { sanitizeErrorForLogging } = require('../helpers/maskFnr')
 
 const lookupKRR = async (ssn) => {
   const request = {
@@ -16,7 +17,7 @@ const lookupKRR = async (ssn) => {
     const krrData = await axios.request(request)
     return krrData.data
   } catch (error) {
-    logger('error', ['queryKRR', 'Klarte ikke å hente data fra KRR', error])
+    logger('error', ['queryKRR', 'Klarte ikke å hente data fra KRR', sanitizeErrorForLogging(error)])
     return { status: 500, message: 'Internal server error' }
   }
 }

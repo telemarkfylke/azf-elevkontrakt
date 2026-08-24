@@ -3,6 +3,7 @@ const fs = require('fs')
 const { xledger } = require('../../../config')
 const { logger } = require('@vtfk/logger')
 const getAccessToken = require('../auth/get-endtraid-token')
+const { sanitizeErrorForLogging } = require('../helpers/maskFnr')
 const logPrefix = 'queryXledger'
 
 const queryXledger = async (request, fileName) => {
@@ -32,7 +33,7 @@ const queryXledger = async (request, fileName) => {
   try {
     return await axios.request(xledgerRequest)
   } catch (error) {
-    logger('error', [logPrefix, 'Error fetching data from xledger api', error])
+    logger('error', [logPrefix, 'Error fetching data from xledger api', sanitizeErrorForLogging(error)])
   }
 }
 
@@ -61,7 +62,7 @@ const getSalesOrders = async (extOrderNumbers) => {
     }
     return rows
   } catch (error) {
-    logger('error', [logPrefix, 'Error fetching salesorders', error])
+    logger('error', [logPrefix, 'Error fetching salesorders', sanitizeErrorForLogging(error)])
   }
 }
 
@@ -78,7 +79,7 @@ const getOrderStatuses = async (extOrderNumbers) => {
     const res = await queryXledger(request)
     return res.data.rows
   } catch (error) {
-    logger('error', [logPrefix, 'Error fetching orderStatus', error])
+    logger('error', [logPrefix, 'Error fetching orderStatus', sanitizeErrorForLogging(error)])
   }
 }
 /**
@@ -103,7 +104,7 @@ const fileImport = async (fileType, pathToFileForImport, fileName) => {
     const result = await queryXledger(request, fileName)
     return result
   } catch (error) {
-    logger('error', [logPrefix, `Error importing file: ${fileName}`, error])
+    logger('error', [logPrefix, `Error importing file: ${fileName}`, sanitizeErrorForLogging(error)])
   }
 }
 

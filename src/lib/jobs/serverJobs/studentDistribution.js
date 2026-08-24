@@ -3,6 +3,7 @@ const { getDocuments } = require('../queryMongoDB')
 const { student } = require('../queryFINT')
 const { utdanningsprogram } = require('../../datasources/utdanningsprogram')
 const { isElevforholdActive } = require('../../helpers/isElevforholdActive')
+const { maskFnr } = require('../../helpers/maskFnr')
 
 /**
  * Get all students from the database and categorize them by their education program (utdanningsprogram)
@@ -74,7 +75,7 @@ const getStudentDistributionByEducationProgram = async () => {
         const fintData = await student(fnr, false, false)
         
         if (fintData.status === 404 || fintData.status === 500) {
-          logger('warn', [loggerPrefix, `Student ${fnr} not found in FINT or error occurred`])
+          logger('warn', [loggerPrefix, `Student ${maskFnr(fnr)} not found in FINT or error occurred`])
           stats.studentsWithoutFintData++
           
           distribution.unknown.students.push({
@@ -93,7 +94,7 @@ const getStudentDistributionByEducationProgram = async () => {
         const activeElevforhold = fintData.elevforhold?.filter(forhold => isElevforholdActive(forhold)) || []
         
         if (activeElevforhold.length === 0) {
-          logger('warn', [loggerPrefix, `No active elevforhold found for student ${fnr}`])
+          logger('warn', [loggerPrefix, `No active elevforhold found for student ${maskFnr(fnr)}`])
           stats.studentsWithoutEducationProgram++
           
           distribution.unknown.students.push({
@@ -114,7 +115,7 @@ const getStudentDistributionByEducationProgram = async () => {
 
         const programomrademedlemskap = primaryElevforhold.programomrademedlemskap
         if (!programomrademedlemskap || programomrademedlemskap.length === 0) {
-          logger('warn', [loggerPrefix, `No programomrademedlemskap found for student ${fnr}`])
+          logger('warn', [loggerPrefix, `No programomrademedlemskap found for student ${maskFnr(fnr)}`])
           stats.studentsWithoutEducationProgram++
           
           distribution.unknown.students.push({
@@ -131,7 +132,7 @@ const getStudentDistributionByEducationProgram = async () => {
         const activeProgramomrade = programomrademedlemskap.find(program => program.aktiv === true) || programomrademedlemskap[0]
         
         if (!activeProgramomrade || !activeProgramomrade.utdanningsprogram || activeProgramomrade.utdanningsprogram.length === 0) {
-          logger('warn', [loggerPrefix, `No utdanningsprogram found in programomrademedlemskap for student ${fnr}`])
+          logger('warn', [loggerPrefix, `No utdanningsprogram found in programomrademedlemskap for student ${maskFnr(fnr)}`])
           stats.studentsWithoutEducationProgram++
           
           distribution.unknown.students.push({
@@ -150,7 +151,7 @@ const getStudentDistributionByEducationProgram = async () => {
         const matchResult = findMatchingProgram(utdanningsprogramData, utdanningsprogram)
         
         if (!matchResult.found) {
-          logger('warn', [loggerPrefix, `Could not match program for student ${fnr}, utdanningsprogram: ${JSON.stringify(utdanningsprogramData)}`])
+          logger('warn', [loggerPrefix, `Could not match program for student ${maskFnr(fnr)}, utdanningsprogram: ${JSON.stringify(utdanningsprogramData)}`])
           stats.studentsWithoutEducationProgram++
           
           distribution.unknown.students.push({
