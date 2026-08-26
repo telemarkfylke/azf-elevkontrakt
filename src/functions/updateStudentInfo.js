@@ -22,18 +22,19 @@ app.timer('updateStudentInfo', {
  * This function is only needed durring the start of semester when students are being added to the system and their information is being updated frequently. After the initial period, this function can be disabled to reduce load on the system.
  * Studnets may swap schools frequently during the start of semester, and this function ensures that their information is updated in a timely manner.
  */
-app.timer('updateStudentInfoSkipCache', {
-  // Every hour from 07:00 to 16:00 on weekdays
-  schedule: '0 0 7-16 * * 1-5',
-  handler: async (myTimer, context) => {
-    try {
-      const report = await updateStudentInfo(true, true)
-      return { status: 200, jsonBody: report }
-    } catch (error) {
-      return { status: 500, jsonBody: { error: 'Failed to update student information', details: error.message } }
-    }
-  }
-})
+
+// app.timer('updateStudentInfoSkipCache', {
+//   // Every hour from 07:00 to 16:00 on weekdays
+//   schedule: '0 0 7-16 * * 1-5',
+//   handler: async (myTimer, context) => {
+//     try {
+//       const report = await updateStudentInfo(true, true)
+//       return { status: 200, jsonBody: report }
+//     } catch (error) {
+//       return { status: 500, jsonBody: { error: 'Failed to update student information', details: error.message } }
+//     }
+//   }
+// })
 
 app.http('updateStudentInfoDev', {
   methods: ['GET'],
