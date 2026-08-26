@@ -6,6 +6,8 @@ const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaIn
 
 // ---- Helpers ---------------------------------------------------------------
 
+const UTLAAN = 'Utlån faktureres ikke'
+
 const makeDocument = (overrides = {}) => ({
   elevInfo: { fnr: '12345678901', navn: 'Test Elev' },
   unSignedskjemaInfo: { kontraktType: 'Leieavtale' },
@@ -115,6 +117,52 @@ describe('applyHistoricalFakturaInfo', () => {
         rate3: { status: 'Utlån faktureres ikke', faktureringsår: 'Utlån faktureres ikke' }
       }
     }
+    assert.deepEqual(applyHistoricalFakturaInfo(doc, historicalContract), doc)
+  })
+
+  // Regression: a Låneavtale is never invoiced, so it has no invoice history to inherit — merging can
+  // only import corruption. Digitroll-imported Låneavtaler in 'historiske-avtaler' carry a real
+  // faktureringsår next to the correct status, and since the year recalculation below only fires for
+  // 'Ikke Fakturert' rates, that shape used to be copied straight onto brand-new contracts, which
+  // getFakturaInfoMismatches then rejected to the error collection.
+  test('never merges onto a Låneavtale, even from a legitimate same-type historical contract', () => {
+    const doc = makeDocument({
+      unSignedskjemaInfo: { kontraktType: 'Låneavtale' },
+      fakturaInfo: {
+        rate1: { status: UTLAAN, faktureringsår: UTLAAN },
+        rate2: { status: UTLAAN, faktureringsår: UTLAAN },
+        rate3: { status: UTLAAN, faktureringsår: UTLAAN }
+      }
+    })
+    const historicalContract = {
+      unSignedskjemaInfo: { kontraktType: 'Låneavtale' },
+      fakturaInfo: {
+        rate1: { status: UTLAAN, faktureringsår: '2025', faktureringsDato: 'Ukjent', betaltDato: 'Ukjent', sum: 'Ukjent' },
+        rate2: { status: UTLAAN, faktureringsår: '2026', faktureringsDato: 'Ukjent', betaltDato: 'Ukjent', sum: 'Ukjent' },
+        rate3: { status: UTLAAN, faktureringsår: '2027', faktureringsDato: 'Ukjent', betaltDato: 'Ukjent', sum: 'Ukjent' }
+      }
+    }
+
+    const result = applyHistoricalFakturaInfo(doc, historicalContract)
+
+    assert.deepEqual(result, doc)
+    assert.deepEqual(getFakturaInfoMismatches(result), [])
+  })
+
+  test('skips the merge for a Låneavtale regardless of kontraktType casing', () => {
+    const doc = makeDocument({
+      unSignedskjemaInfo: { kontraktType: 'låneavtale' },
+      fakturaInfo: {
+        rate1: { status: UTLAAN, faktureringsår: UTLAAN },
+        rate2: { status: UTLAAN, faktureringsår: UTLAAN },
+        rate3: { status: UTLAAN, faktureringsår: UTLAAN }
+      }
+    })
+    const historicalContract = {
+      unSignedskjemaInfo: { kontraktType: 'Låneavtale' },
+      fakturaInfo: makeHistoricalFakturaInfo()
+    }
+
     assert.deepEqual(applyHistoricalFakturaInfo(doc, historicalContract), doc)
   })
 

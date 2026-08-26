@@ -810,6 +810,66 @@ describe('digitrollImportDocument', () => {
     assert.equal(document.fakturaInfo.rate1['faktureringsår'], 'Ukjent')
   })
 
+  // Regression: Digitroll leaves ExtKvittering/Sum/Betalingsbeskrivelse empty for a låneavtale, so
+  // importDigitrollStudents.js synthesizes all three fakturaEntries with a running calendar year and
+  // 'Ukjent' everywhere else. handleStatusField already forced status to UTLAAN, but faktureringsår
+  // was copied through raw, leaving every imported Låneavtale half-canonical — which
+  // applyHistoricalFakturaInfo then copied onto brand-new contracts.
+  test('a Låneavtale never carries a real faktureringsår, even when the Digitroll entry has one', () => {
+    const documentData = makeDigitrollData({
+      type: 'Låneavtale',
+      fakturaEntries: [
+        makeFakturaEntry({ 'faktureringsår': '2020' }),
+        makeFakturaEntry({ 'faktureringsår': '2021' }),
+        makeFakturaEntry({ 'faktureringsår': '2022' })
+      ]
+    })
+
+    const document = digitrollImportDocument(documentData, makeAnsvarligData())
+
+    for (const rateKey of ['rate1', 'rate2', 'rate3']) {
+      assert.equal(document.fakturaInfo[rateKey]['faktureringsår'], UTLAAN)
+      assert.equal(document.fakturaInfo[rateKey].status, UTLAAN)
+    }
+  })
+
+  test('a Låneavtale built from synthesized filler entries is canonical on every rate', () => {
+    // The exact shape importDigitrollStudents.js:500-517 produces when a contract has no paid rows.
+    const filler = (year) => ({ 'faktureringsår': year, faktureringsDato: 'Ukjent', 'løpenummer': 'Ukjent', status: 'Ikke Fakturert', sum: 'Ukjent', betaltDato: 'Ukjent' })
+    const documentData = makeDigitrollData({
+      type: 'Låneavtale',
+      fakturaEntries: [filler(YEAR_1), filler(YEAR_2), filler(YEAR_3)]
+    })
+
+    const document = digitrollImportDocument(documentData, makeAnsvarligData())
+
+    for (const rateKey of ['rate1', 'rate2', 'rate3']) {
+      assert.equal(document.fakturaInfo[rateKey]['faktureringsår'], UTLAAN)
+      assert.equal(document.fakturaInfo[rateKey].status, UTLAAN)
+    }
+  })
+
+  test('a Låneavtale with no Digitroll entries at all is canonical on every rate', () => {
+    const document = digitrollImportDocument(makeDigitrollData({ type: 'Låneavtale', fakturaEntries: [] }), makeAnsvarligData())
+
+    for (const rateKey of ['rate1', 'rate2', 'rate3']) {
+      assert.equal(document.fakturaInfo[rateKey]['faktureringsår'], UTLAAN)
+      assert.equal(document.fakturaInfo[rateKey].status, UTLAAN)
+    }
+  })
+
+  test('a Leieavtale still gets its faktureringsår straight from the Digitroll entry', () => {
+    const documentData = makeDigitrollData({
+      type: 'Leieavtale',
+      fakturaEntries: [makeFakturaEntry({ 'faktureringsår': '2020' })]
+    })
+
+    const document = digitrollImportDocument(documentData, makeAnsvarligData())
+
+    assert.equal(document.fakturaInfo.rate1['faktureringsår'], '2020')
+    assert.equal(document.fakturaInfo.rate2['faktureringsår'], 'Ukjent')
+  })
+
   test('is marked as an imported, signed, already-invoiced contract', () => {
     const document = digitrollImportDocument(makeDigitrollData(), makeAnsvarligData())
 

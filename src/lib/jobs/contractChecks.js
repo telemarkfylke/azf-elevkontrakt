@@ -58,6 +58,15 @@ const findLatestHistoricalContract = async (fnr, kontraktType, mongoClient) => {
  * findLatestHistoricalContract) — a second, independent guard against the cross-type fakturaInfo
  * corruption bug (contractChecks.js, fixed 2026-08-19), in case findLatestHistoricalContract (or
  * some future caller) is ever given a mismatched historicalContract by mistake.
+ *
+ * Also skips the merge entirely for a Låneavtale: it is never invoiced, so there is no invoice
+ * history to carry forward — its fakturaInfo is a constant ('Utlån faktureres ikke' on both status
+ * and faktureringsår for all three rates), which fillDocument/fillManualDocument already produce.
+ * Merging could therefore only ever import corruption, and did: Digitroll-imported Låneavtaler in
+ * 'historiske-avtaler' carry a real faktureringsår (2025/2026/2027) alongside the correct status
+ * (see handleFaktureringsårField, documentSchema.js), and this function copied that verbatim onto
+ * new contracts — the year recalculation below only fires for 'Ikke Fakturert' rates — leaving them
+ * to be rejected by getFakturaInfoMismatches.
  * @param {Object} document - New contract document
  * @param {Object} historicalContract - Historical contract to copy fakturaInfo from
  * @returns {Object} - Updated document with merged fakturaInfo
@@ -69,6 +78,11 @@ const applyHistoricalFakturaInfo = (document, historicalContract) => {
   const historicalKontraktType = historicalContract.unSignedskjemaInfo?.kontraktType?.toLowerCase()
   if (documentKontraktType && historicalKontraktType && documentKontraktType !== historicalKontraktType) {
     logger('error', ['applyHistoricalFakturaInfo', 'Refusing to merge fakturaInfo across mismatched kontraktType', `fnr: ${maskFnr(document.elevInfo?.fnr)}`, `document kontraktType: ${documentKontraktType}`, `historicalContract kontraktType: ${historicalKontraktType}`])
+    return document
+  }
+
+  if (documentKontraktType === 'låneavtale') {
+    logger('info', ['applyHistoricalFakturaInfo', 'Låneavtale har ingen fakturahistorikk å arve, beholder fakturaInfo som den er', `fnr: ${maskFnr(document.elevInfo?.fnr)}`])
     return document
   }
 

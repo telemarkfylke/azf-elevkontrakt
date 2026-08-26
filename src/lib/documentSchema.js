@@ -313,6 +313,24 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
       return 'Skal ikke betale'
     }
   }
+
+  /**
+   * Same kontraktType-awareness as handleStatusField, but for faktureringsår: a Låneavtale is never
+   * invoiced, so its rates must carry 'Utlån faktureres ikke' in faktureringsår too - not whatever
+   * year the Digitroll entry happens to hold.
+   *
+   * Digitroll leaves ExtKvittering/Sum/Betalingsbeskrivelse empty for a låneavtale, so the import
+   * (importDigitrollStudents.js) synthesizes all three fakturaEntries with a running calendar year
+   * (currentYear, +1, +2) and 'Ukjent' everywhere else. Copying that year through here left every
+   * imported Låneavtale half-canonical (status 'Utlån faktureres ikke' + faktureringsår '2025'),
+   * which applyHistoricalFakturaInfo (contractChecks.js) later copied verbatim onto brand-new
+   * contracts, getting them rejected by getFakturaInfoMismatches. The raw Digitroll values are still
+   * kept on document.digiTrollData for reference.
+   */
+  const handleFaktureringsårField = (fakturaEntries, type) => {
+    if (type?.toLowerCase() === 'låneavtale') return 'Utlån faktureres ikke'
+    return fakturaEntries?.['faktureringsår'] || 'Ukjent'
+  }
   const document = {
     uuid: crypto.randomUUID(),
     generatedTimeStamp: new Date().toISOString(),
@@ -353,7 +371,7 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
     fakturaInfo: {
       rate1: {
         // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-        faktureringsår: documentData?.fakturaEntries[0]?.['faktureringsår'] || 'Ukjent',
+        faktureringsår: handleFaktureringsårField(documentData?.fakturaEntries[0], documentData?.type),
         faktureringsDato: documentData?.fakturaEntries[0]?.faktureringsDato || 'Ukjent',
         betaltDato: documentData?.fakturaEntries[0]?.betaltDato || 'Ukjent',
         status: handleStatusField(documentData?.fakturaEntries[0], documentData?.type),
@@ -362,7 +380,7 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
       },
       rate2: {
         // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-        faktureringsår: documentData?.fakturaEntries[1]?.['faktureringsår'] || 'Ukjent',
+        faktureringsår: handleFaktureringsårField(documentData?.fakturaEntries[1], documentData?.type),
         faktureringsDato: documentData?.fakturaEntries[1]?.faktureringsDato || 'Ukjent',
         betaltDato: documentData?.fakturaEntries[1]?.betaltDato || 'Ukjent',
         status: handleStatusField(documentData?.fakturaEntries[1], documentData?.type),
@@ -371,7 +389,7 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
       },
       rate3: {
         // Inneholder infomasjon om faktura, hvor mange rater du skal betale og har betalt. Hvor mye du skal betale per rate.
-        faktureringsår: documentData?.fakturaEntries[2]?.['faktureringsår'] || 'Ukjent',
+        faktureringsår: handleFaktureringsårField(documentData?.fakturaEntries[2], documentData?.type),
         faktureringsDato: documentData?.fakturaEntries[2]?.faktureringsDato || 'Ukjent',
         betaltDato: documentData?.fakturaEntries[2]?.betaltDato || 'Ukjent',
         status: handleStatusField(documentData?.fakturaEntries[2], documentData?.type),
