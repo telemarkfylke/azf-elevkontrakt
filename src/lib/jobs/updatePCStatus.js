@@ -11,6 +11,42 @@ const STATUS_FIELD_MAP = {
   utkjøp: 'buyOutPC'
 }
 
+/**
+ * Looks up a contract by Pureservice user ID — checks active contracts ('regular') first,
+ * then the historic PC-not-delivered collection ('pcIkkeInnlevert'). Does not throw; returns
+ * { contract: null, documentType: null } when nothing matches, leaving error handling to the
+ * caller (updatePCStatus throws a 404, other callers may prefer to skip and log).
+ * If more than one contract matches the same pureserviceId (e.g. a student with both an active
+ * Leieavtale and Låneavtale), the first result is used - not disambiguated further.
+ * @param {number} pureserviceId
+ * @param {Object} [deps]
+ * @param {Function} [deps.getDocumentsFn]
+ * @returns {Promise<{contract: Object|null, documentType: 'regular'|'pcIkkeInnlevert'|null}>}
+ */
+const findContractByPureserviceId = async (pureserviceId, deps = {}) => {
+  const { getDocumentsFn = getDocuments } = deps
+
+  const regularResult = await getDocumentsFn({ pureserviceId }, 'regular')
+  if (regularResult.status === 200) {
+    return { contract: regularResult.result[0], documentType: 'regular' }
+  }
+
+  const historicResult = await getDocumentsFn({ pureserviceId }, 'pcIkkeInnlevert')
+  if (historicResult.status === 200) {
+    return { contract: historicResult.result[0], documentType: 'pcIkkeInnlevert' }
+  }
+
+  return { contract: null, documentType: null }
+}
+
+/**
+ * Maps a documentType from findContractByPureserviceId to the targetCollection value
+ * updateContractPCStatus expects: undefined for the regular contracts collection,
+ * 'pcIkkeInnlevert' for the historic PC-not-delivered collection.
+ * @param {'regular'|'pcIkkeInnlevert'|null} documentType
+ */
+const targetCollectionFor = (documentType) => documentType === 'pcIkkeInnlevert' ? 'pcIkkeInnlevert' : undefined
+
 const updatePCStatus = async (studentId, newStatus, requestMadeBy, deps = {}) => {
   const logPrefix = 'updatePCStatus'
   const {
@@ -35,22 +71,7 @@ const updatePCStatus = async (studentId, newStatus, requestMadeBy, deps = {}) =>
     throw err
   }
 
-  // Look up contract by pureserviceId — check active contracts first, then historic
-  let contract = null
-  let targetCollection
-
-  const regularResult = await getDocumentsFn({ pureserviceId }, 'regular')
-  if (regularResult.status === 200) {
-    contract = regularResult.result[0]
-    logger('info', [logPrefix, `Found contract in kontrakter for pureserviceId: ${studentId}`])
-  } else {
-    const historicResult = await getDocumentsFn({ pureserviceId }, 'pcIkkeInnlevert')
-    if (historicResult.status === 200) {
-      contract = historicResult.result[0]
-      targetCollection = 'pcIkkeInnlevert'
-      logger('info', [logPrefix, `Found contract in historiske-avtaler-pc-ikke-innlevert for pureserviceId: ${studentId}`])
-    }
-  }
+  const { contract, documentType } = await findContractByPureserviceId(pureserviceId, { getDocumentsFn })
 
   if (!contract) {
     logger('error', [logPrefix, `No contract found for studentId/pureserviceId: ${studentId}, requestMadeBy: ${requestMadeBy}`])
@@ -58,6 +79,8 @@ const updatePCStatus = async (studentId, newStatus, requestMadeBy, deps = {}) =>
     err.status = 404
     throw err
   }
+
+  logger('info', [logPrefix, `Found contract in ${documentType === 'pcIkkeInnlevert' ? 'historiske-avtaler-pc-ikke-innlevert' : 'kontrakter'} for pureserviceId: ${studentId}`])
 
   const contractUpdate = {
     contractID: contract._id.toString(),
@@ -67,8 +90,8 @@ const updatePCStatus = async (studentId, newStatus, requestMadeBy, deps = {}) =>
 
   logger('info', [logPrefix, `Updating pcInfo for contractID: ${contractUpdate.contractID}, status: ${normalizedStatus}, upn: ${contractUpdate.upn}`])
 
-  const result = await updateContractPCStatusFn(contractUpdate, false, targetCollection)
+  const result = await updateContractPCStatusFn(contractUpdate, false, targetCollectionFor(documentType))
   return result
 }
 
-module.exports = { updatePCStatus }
+module.exports = { updatePCStatus, findContractByPureserviceId, targetCollectionFor }
