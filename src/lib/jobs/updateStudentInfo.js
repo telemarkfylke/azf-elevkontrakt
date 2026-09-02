@@ -30,6 +30,7 @@ const { teams } = require('../../../config.js')
 const { logger } = require('@vtfk/logger')
 const { student } = require('./queryFINT')
 const { determineHistoryMoveTarget } = require('./contractChecks.js')
+const { getUnsettledInvoices } = require('./invoiceChecks.js')
 const { isElevforholdActive } = require('../helpers/isElevforholdActive')
 const axios = require('axios').default
 
@@ -86,7 +87,20 @@ const updateStudentInfo = async (skipCache, updateOnlyIfPCStatusIsFalse) => {
       if (doc.notFoundInFINT.date < date) {
         // If its more than 5 days old, move the document to the history database or the pcIkkeInnlevert database
         logger('info', [loggerPrefix, `Document with _id ${doc._id} not found in FINT for more than 5 days, moving to history or pcIkkeInnlevert database`])
-        const target = determineHistoryMoveTarget(doc)
+        let target = determineHistoryMoveTarget(doc)
+        if (target === 'historic') {
+          // determineHistoryMoveTarget only sees the contract's own fakturaInfo - an unpaid
+          // extraInvoice has no counterpart there. Route to pcIkkeInnlevert instead of the final
+          // archive (which no job revisits, and where the Pureservice link has been cleared);
+          // archiveResolvedPcIkkeInnlevert picks the contract up once the invoice is settled.
+          // A failure here propagates to the caller, which logs and skips the document for this
+          // run - retried tomorrow, rather than misfiled in either direction.
+          const unsettledInvoices = await getUnsettledInvoices(doc._id)
+          if (unsettledInvoices.length > 0) {
+            logger('info', [loggerPrefix, `Document with _id ${doc._id} has ${unsettledInvoices.length} unsettled invoice(s), moving to pcIkkeInnlevert instead of history`, unsettledInvoices.map(invoice => `${invoice.type}: ${invoice.status}`).join('; ')])
+            target = 'pcIkkeInnlevert'
+          }
+        }
         if (target === 'historic') {
           try {
             const moveResult = await moveAndDeleteDocument(doc._id, 'historic', 'regular')
