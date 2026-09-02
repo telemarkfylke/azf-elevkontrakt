@@ -12,6 +12,96 @@ const { logger } = require("@vtfk/logger")
 const { generateSerialNumber } = require("../helpers/getSerialNumber")
 
 
+/**
+ * Builds and posts a buyOut invoice for a contract: matches each cart item to an unpaid
+ * ('Ikke Fakturert') rate by faktureringsår, generates a serial number and flips that rate's
+ * status/sum/løpenummer, then posts the invoice document. Shared by the manual cart-checkout
+ * flow (generateInvoices, below) and the automated Pureservice buyout sync
+ * (syncPureserviceAssetLifecycle.js) - callers unpack their own input shape (HTTP cart body vs.
+ * computed values) and build invoiceCreatedBy themselves; this function only knows about the
+ * contract and rates.
+ * @param {Object} customerContract - full contract document
+ * @param {Array<{faktureringsår: *, sum: *}>} buyOutItems
+ * @param {string} mainDocumentCollectionSource - 'regular' | 'pcIkkeInnlevert'
+ * @param {Object} invoiceCreatedBy - { name, givenName, surname, email, companyName, officeLocation, jobTitle }
+ * @param {Object} [deps]
+ * @returns {Promise<{status: number, body: string}>}
+ */
+const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCollectionSource, invoiceCreatedBy, deps = {}) => {
+    const {
+        updateDocument: _updateDocument = updateDocument,
+        postExtraInvoice: _postExtraInvoice = postExtraInvoice,
+        generateSerialNumber: _generateSerialNumber = generateSerialNumber,
+        logger: _logger = logger,
+    } = deps
+
+    const logPrefix = 'createBuyOutInvoice - processInvoices'
+
+    // Get rates from fakturaInfo object.
+    const ratesFromFakturaInfo = Object.keys(customerContract.fakturaInfo).filter(key => key.startsWith('rate')).map(key => customerContract.fakturaInfo[key])
+
+    // Find the rates beeing invoiced in the contract based on the faktureringsår, this should be unique for each rate.
+    const ratesToInvoice = []
+    for (const buyOutItem of buyOutItems) {
+        let foundRate = null
+        for (let i = 0; i < ratesFromFakturaInfo.length; i++) {
+            const rate = ratesFromFakturaInfo[i]
+            if (rate.faktureringsår === buyOutItem.faktureringsår && rate.status.toLowerCase() === 'ikke fakturert') {
+                const rateNumberFull = `rate${i + 1}`
+                const rateNumber = i + 1
+                const serialNumber = await _generateSerialNumber(rateNumber)
+                const updateRate = {}
+                updateRate[`fakturaInfo.${rateNumberFull}.status`] = 'Fakturert - Utkjøp'
+                updateRate[`fakturaInfo.${rateNumberFull}.løpenummer`] = serialNumber
+                updateRate[`fakturaInfo.${rateNumberFull}.sum`] = buyOutItem.sum
+                await _updateDocument(customerContract._id, updateRate, mainDocumentCollectionSource)
+                rate.løpenummer = serialNumber
+                foundRate = rate
+                break
+            } else {
+                _logger('info', [logPrefix, `No match for faktureringsår ${buyOutItem.faktureringsår} and status "Ikke Fakturert" in rate: ${JSON.stringify(rate)}`])
+            }
+        }
+        if (!foundRate) {
+            _logger('error', [logPrefix, `No rate found for faktureringsår ${buyOutItem.faktureringsår} in the contract's fakturaInfo`])
+        } else {
+            ratesToInvoice.push(foundRate)
+        }
+    }
+
+    if (ratesToInvoice.length === 0) {
+        _logger('error', [logPrefix, 'No rates found for the provided faktureringsår that are not already invoiced'])
+        return { status: 404, body: 'Not Found: No rates found for the provided faktureringsår that are not already invoiced' }
+    }
+
+    const buyOutObject = {
+        type: 'buyOut',
+        customerContractId: customerContract._id,
+        mainDocumentCollectionSource,
+        recipient: {
+            ...customerContract.ansvarligInfo
+        },
+        student: {
+            ...customerContract.elevInfo
+        },
+        skoleOrgNr: customerContract.skoleOrgNr,
+        status: 'Ikke Fakturert',
+        itemsFromCart: buyOutItems,
+        rates: ratesToInvoice,
+        invoiceCreatedBy,
+        createdTimeStamp: new Date()
+    }
+
+    try {
+        await _postExtraInvoice(buyOutObject)
+    } catch (error) {
+        _logger('error', [logPrefix, 'Error posting extra invoice', error])
+        return { status: 500, body: 'Internal Server Error: Error posting buyOut invoice' }
+    }
+
+    return { status: 200, body: 'Invoices processed successfully' }
+}
+
 const generateInvoices = async (body, request, deps = {}) => {
     const {
         getDocuments: _getDocuments = getDocuments,
@@ -32,79 +122,27 @@ const generateInvoices = async (body, request, deps = {}) => {
         customerContract = customerContract.result[0]
     }
 
-    let buyOutObject = null
-    let extraInvoiceObject = null        
+    let extraInvoiceObject = null
 
     // Handle buyOut invoice
-    if(body.cart.buyOut.length > 0) {            
-        // Get rates from fakturaInfo object.
-        const ratesFromFakturaInfo = Object.keys(customerContract.fakturaInfo).filter(key => key.startsWith('rate')).map(key => customerContract.fakturaInfo[key])
-
-        // Find the rates beeing invoiced in the contract based on the faktureringsår, this should be unique for each rate.
-        const ratesToInvoice = []
-        for (const buyOutItem of body.cart.buyOut) {
-            let foundRate = null
-            for (let i = 0; i < ratesFromFakturaInfo.length; i++) {
-                const rate = ratesFromFakturaInfo[i]
-                if (rate.faktureringsår === buyOutItem.faktureringsår && rate.status.toLowerCase() === 'ikke fakturert') {
-                    const rateNumberFull = `rate${i + 1}`
-                    const rateNumber = i + 1
-                    const serialNumber = await _generateSerialNumber(rateNumber)
-                    const updateRate = {}
-                    updateRate[`fakturaInfo.${rateNumberFull}.status`] = 'Fakturert - Utkjøp'
-                    updateRate[`fakturaInfo.${rateNumberFull}.løpenummer`] = serialNumber
-                    updateRate[`fakturaInfo.${rateNumberFull}.sum`] = buyOutItem.sum
-                    await _updateDocument(customerContract._id, updateRate, body.mainDocumentCollectionSource)
-                    rate.løpenummer = serialNumber
-                    foundRate = rate
-                    break
-                } else {
-                    _logger('info', [`${logPrefix} - ${request.method}`, `No match for faktureringsår ${buyOutItem.faktureringsår} and status "Ikke Fakturert" in rate: ${JSON.stringify(rate)}`])
-                }
-            }
-            if (!foundRate) {
-                _logger('error', [`${logPrefix} - ${request.method}`, `No rate found for faktureringsår ${buyOutItem.faktureringsår} in the contract's fakturaInfo`])
-            } else {
-                ratesToInvoice.push(foundRate)
-            }
+    if(body.cart.buyOut.length > 0) {
+        const invoiceCreatedBy = {
+            name: body.userInfo.displayName,
+            givenName: body.userInfo.givenName,
+            surname: body.userInfo.surname,
+            email: body.userInfo.userPrincipalName,
+            companyName: body.userInfo.companyName,
+            officeLocation: body.userInfo.officeLocation,
+            jobTitle: body.userInfo.jobTitle
         }
-
-        if(ratesToInvoice.length === 0) {
-            _logger('error', [`${logPrefix} - ${request.method}`, 'No rates found for the provided faktureringsår that are not already invoiced'])
-            return { status: 404, body: 'Not Found: No rates found for the provided faktureringsår that are not already invoiced' }
-        }
-
-        buyOutObject = {
-            type: 'buyOut',
-            customerContractId: customerContract._id,
-            mainDocumentCollectionSource: body.mainDocumentCollectionSource,
-            recipient: {
-                ...customerContract.ansvarligInfo
-            },
-            student: {
-                ...customerContract.elevInfo
-            },
-            skoleOrgNr: customerContract.skoleOrgNr,
-            status: 'Ikke Fakturert',
-            itemsFromCart: body.cart.buyOut,
-            rates: ratesToInvoice,
-            invoiceCreatedBy: {
-                name: body.userInfo.displayName,
-                givenName: body.userInfo.givenName,
-                surname: body.userInfo.surname,
-                email: body.userInfo.userPrincipalName,
-                companyName: body.userInfo.companyName,
-                officeLocation: body.userInfo.officeLocation,
-                jobTitle: body.userInfo.jobTitle
-            },
-            createdTimeStamp: new Date()
-        }
-
-        try {
-            await _postExtraInvoice(buyOutObject)
-        } catch (error) {
-            _logger('error', [`${logPrefix} - ${request.method}`, 'Error posting extra invoice', error])
-            return { status: 500, body: 'Internal Server Error: Error posting buyOut invoice' }
+        const buyOutResult = await createBuyOutInvoice(customerContract, body.cart.buyOut, body.mainDocumentCollectionSource, invoiceCreatedBy, {
+            updateDocument: _updateDocument,
+            postExtraInvoice: _postExtraInvoice,
+            generateSerialNumber: _generateSerialNumber,
+            logger: _logger
+        })
+        if (buyOutResult.status !== 200) {
+            return buyOutResult
         }
     }
 
@@ -163,5 +201,6 @@ const generateInvoices = async (body, request, deps = {}) => {
 }
 
 module.exports = {
-    generateInvoices
+    generateInvoices,
+    createBuyOutInvoice
 }
