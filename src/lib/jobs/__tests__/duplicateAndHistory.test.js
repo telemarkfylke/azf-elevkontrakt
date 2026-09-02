@@ -344,8 +344,25 @@ describe('determineHistoryMoveTarget', () => {
     assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
   })
 
-  test('neither returned nor bought out -> pcIkkeInnlevert', () => {
+  test('neither returned nor bought out, all rates "Betalt" -> historic (fully paid)', () => {
     const doc = makeMoveTargetDoc({ returned: 'false', boughtOut: 'false', rateStatuses: ['Betalt', 'Betalt', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
+  })
+
+  test('neither returned nor bought out, rates "Betalt"/"Kreditert" -> historic (fully paid)', () => {
+    const doc = makeMoveTargetDoc({ returned: 'false', boughtOut: 'false', rateStatuses: ['Betalt', 'Kreditert', 'Betalt'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'historic')
+  })
+
+  // 'Skal ikke betale' means nothing is owed, but the fully-paid path deliberately accepts only
+  // 'Betalt'/'Kreditert' - without a returned or bought-out PC this one stays put.
+  test('neither returned nor bought out, one rate "Skal ikke betale" -> pcIkkeInnlevert', () => {
+    const doc = makeMoveTargetDoc({ returned: 'false', boughtOut: 'false', rateStatuses: ['Betalt', 'Betalt', 'Skal ikke betale'] })
+    assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
+  })
+
+  test('neither returned nor bought out, one rate "Ikke Fakturert" -> pcIkkeInnlevert', () => {
+    const doc = makeMoveTargetDoc({ returned: 'false', boughtOut: 'false', rateStatuses: ['Betalt', 'Betalt', 'Ikke Fakturert'] })
     assert.equal(determineHistoryMoveTarget(doc), 'pcIkkeInnlevert')
   })
 

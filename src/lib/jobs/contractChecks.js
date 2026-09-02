@@ -161,12 +161,22 @@ const getFakturaInfoMismatches = (document) => {
 
 const RETURNED_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Ikke Fakturert', 'Utlån faktureres ikke', 'Kreditert']
 const BOUGHT_OUT_ALLOWED_RATE_STATUSES = ['Betalt', 'Skal ikke betale', 'Utlån faktureres ikke', 'Kreditert']
+// A contract with every rate paid owes nothing and is done regardless of what happened to the PC,
+// so it archives even when neither returned nor boughtOut was ever recorded (a Leieavtale paid for
+// all three years is effectively the student's machine). This is a subset of both lists above, so
+// the only case it actually adds is "no PC disposition recorded at all".
+const FULLY_PAID_RATE_STATUSES = ['Betalt', 'Kreditert']
 
 /**
- * Decides whether a contract should be archived to 'historic' or routed to 'pcIkkeInnlevert',
- * based on whether the PC was returned/bought out and whether all rates are in an accepted status
- * for that path. 'Fakturert' and 'Overført inkasso' (and any unrecognized status) always block
- * the move to 'historic', since they represent an unresolved invoice.
+ * Decides whether a contract should be archived to 'historic' or routed to 'pcIkkeInnlevert'.
+ * A contract reaches 'historic' when it is fully paid (every rate 'Betalt'/'Kreditert'), or when
+ * the PC was returned/bought out and all rates are in an accepted status for that path.
+ * 'Fakturert' and 'Overført inkasso' (and any unrecognized status) always block the move to
+ * 'historic', since they represent an unresolved invoice.
+ *
+ * Note this only looks at the contract's own fakturaInfo - it cannot see the 'invoices'
+ * collection, where an unpaid extraInvoice may exist with no counterpart in fakturaInfo. Both
+ * archive paths check that separately, via the shared gate in invoiceChecks.js.
  * @param {Object} doc - Contract document with pcInfo and fakturaInfo
  * @returns {'historic'|'pcIkkeInnlevert'}
  */
@@ -174,7 +184,9 @@ const determineHistoryMoveTarget = (doc) => {
   const rates = [doc.fakturaInfo.rate1.status, doc.fakturaInfo.rate2.status, doc.fakturaInfo.rate3.status]
   const returnedRatesOk = rates.every(status => RETURNED_ALLOWED_RATE_STATUSES.includes(status))
   const boughtOutRatesOk = rates.every(status => BOUGHT_OUT_ALLOWED_RATE_STATUSES.includes(status))
+  const fullyPaid = rates.every(status => FULLY_PAID_RATE_STATUSES.includes(status))
   const shouldMoveToHistory =
+    fullyPaid ||
     (doc.pcInfo.returned === 'true' && returnedRatesOk) ||
     (doc.pcInfo.boughtOut === 'true' && boughtOutRatesOk)
   return shouldMoveToHistory ? 'historic' : 'pcIkkeInnlevert'
@@ -186,5 +198,6 @@ module.exports = {
   applyHistoricalFakturaInfo,
   markAsSigned,
   determineHistoryMoveTarget,
-  getFakturaInfoMismatches
+  getFakturaInfoMismatches,
+  FULLY_PAID_RATE_STATUSES
 }
