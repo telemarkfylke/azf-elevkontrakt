@@ -41,6 +41,51 @@ not do this automatically).
    completed the registration (`completedById`/`createdById`), resolved to an email - not a
    generic sentinel. Falls back to `pureservice-agent-{id}` if that lookup fails.
 
+## Flow at a glance
+
+```mermaid
+flowchart TD
+    START["syncPureserviceAssetLifecycle · timer 0 0 21 * * *<br/>dry-run preview unless dryRun: false"] --> A
+    START --> B
+    START --> C
+
+    subgraph disc["Discovery — 3 fixed calls per run, no server-side date filter"]
+        A["getCompletedAssetRegistrations<br/>completedReasonId 11 · Innlevering (bruker slutter)"]
+        B["getCompletedAssetRegistrations<br/>completedReasonId 14 · Privatisering"]
+        C["getRecentlyCreatedAssetRegistrations<br/>completed === null · a handout updatePCStatus missed"]
+    end
+
+    A --> PCT
+    B --> PCT
+    C --> PCT
+    PCT{"PC-type registration?<br/>assetType.id in PC_ASSET_TYPE_IDS"}
+    PCT -->|"no"| DROP["dropped"]
+    PCT -->|"yes"| CUT["lookback cutoff applied client-side<br/>lookbackDays, default 3 — see 'Pureservice date filtering'"]
+
+    CUT --> PRE{"Mongo bulk pre-filter, one query per action type:<br/>does the contract already have the target pcInfo flag?"}
+    PRE -->|"yes — already handled by the normal flow"| DROP
+    PRE -->|"no"| LOOP["remaining candidates, processed strictly sequentially<br/>— avoids a burst against the 100 req/min limit"]
+
+    LOOP --> FIND{"contract found by pureserviceId?<br/>kontrakter or historiske-avtaler-pc-ikke-innlevert"}
+    FIND -->|"no"| SKIP["skipped"]
+    FIND -->|"yes"| STAT{"getPcPossessionStatus(userId)<br/>the user's current authoritative status"}
+
+    STAT -->|"has"| REL["pcInfo.released / releaseBy / releasedDate"]
+    STAT -->|"returned"| RET["pcInfo.returned / returnedRegisteredBy / returnedDate"]
+    STAT -->|"boughtOut"| BO["pcInfo.boughtOut / buyOutBy / buyOutDate"]
+    STAT -->|"never / unknown"| SKIP
+
+    REL --> WRITE
+    RET --> WRITE
+    BO --> WRITE
+    WRITE["written via updateContractPCStatus;<br/>a flag already set is skipped<br/>actor = the real Pureservice agent, resolved to an email by<br/>resolveActorEmail, falling back to pureservice-agent-{id}"]
+
+    BO --> INVQ{"any rate still 'Ikke Fakturert'?<br/>checked on every run, not gated on the boughtOut flag"}
+    INVQ -->|"no"| NOP["nothing left to invoice"]
+    INVQ -->|"yes"| INV["createBuyOutInvoice → invoices collection, type: buyOut<br/>price from the settings price list via returnCorrectPriceForStudent"]
+    INV --> XL["picked up by the existing xledgerExtraInvoice job"]
+```
+
 Invoicing is **self-healing**: it isn't gated on the `pcInfo.boughtOut` flag (a one-time
 write), only on whether a rate is still `'Ikke Fakturert'` - so a failed invoice attempt on
 one run gets retried automatically on the next, even though the pcInfo flag is already set.

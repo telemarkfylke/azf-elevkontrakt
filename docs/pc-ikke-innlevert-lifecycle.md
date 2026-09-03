@@ -3,6 +3,54 @@
 How a contract enters the "pc ikke innlevert" collection, what happens to it while it sits
 there, and how it leaves.
 
+## Flow at a glance
+
+```mermaid
+flowchart TD
+    subgraph inbound["1 · Getting in — updateStudentInfo, timer 0 6 * * *"]
+        K[("kontrakter")] --> FINT{"still a student with an<br/>active elevforhold in FINT?"}
+        FINT -->|"yes"| UPD["update elevInfo,<br/>clear notFoundInFINT"]
+        FINT -->|"no"| STAMP["stamp notFoundInFINT.date,<br/>leave it in kontrakter"]
+        STAMP -->|"5 days or younger"| WAIT["grace period — a transient FINT gap or a<br/>student between school years must not archive"]
+        WAIT -.->|"next run"| STAMP
+    end
+
+    STAMP -->|"older than 5 days"| RULE
+
+    RULE{"determineHistoryMoveTarget<br/>contractChecks.js — the single eligibility rule"}
+    RULE -->|"every rate Betalt/Kreditert,<br/>or returned + rates ok,<br/>or boughtOut + rates ok"| GATE
+    RULE -->|"anything else — Fakturert,<br/>Overført inkasso, unrecognised"| PEN
+
+    GATE{"invoice gate — invoiceChecks.js<br/>every buyOut and extraInvoice settled?"}
+    GATE -->|"no — money still outstanding"| PEN
+    GATE -->|"yes"| ARCH[("historiske-avtaler<br/>final archive — no job revisits it;<br/>cf_2 reset in Pureservice, pureserviceId dropped")]
+
+    PEN[("historiske-avtaler-pc-ikke-innlevert<br/>holding pen — not settled, not frozen")]
+
+    subgraph sitting["2 · Sitting there — jobs keep writing in place"]
+        WRITES["updatePaymentStatusPCNotDelivered · 04:00 → rate status from Xledger<br/>syncPureserviceStudentsPcIkkeLevert · 07:15 → pureserviceId<br/>syncPureserviceAssetLifecycle · 21:00 → pcInfo + buyout invoice<br/>updatePCStatus (HTTP) / handleDbRequest PUT → pcInfo<br/>every pcInfo write goes through updateContractPCStatus"]
+    end
+
+    PEN <--> WRITES
+
+    subgraph outbound["3 · Getting out — archiveResolvedPcIkkeInnlevert, timer 0 45 4 * * *"]
+        CAND["candidate pre-filter: returned, or boughtOut,<br/>or all rates in FULLY_PAID_RATE_STATUSES"]
+        DEC{"pcInfo and all three<br/>rate statuses present?"}
+        CAND --> DEC
+        DEC -->|"no"| INC["skippedIncomplete — reported,<br/>one bad document must not abort the sweep"]
+    end
+
+    PEN --> CAND
+    DEC -->|"yes"| RULE
+
+    MAN["DELETE /api/handleDbRequest<br/>manual route out, admin UI"] --> ARCH
+```
+
+The rule and the invoice gate are drawn once on purpose: both directions call the same two,
+which is why the inbound router and the outbound sweep can never disagree about where a
+contract belongs. A contract routed back to the holding pen from either gate is what the
+sweep reports as `skippedStillUnresolved` / `skippedUnsettledInvoices`.
+
 ## What the collection means
 
 `historiske-avtaler-pc-ikke-innlevert` (`MONGODB_HISTORIC_PC_NOT_DELIVERED_COLLECTION`) holds
