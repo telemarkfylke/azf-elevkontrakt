@@ -106,6 +106,12 @@ A buyout also creates an `invoices` collection document (`type: "buyOut"`), same
 the manual cart-checkout flow (`postExtraInvoice`), picked up by the existing
 `xledgerExtraInvoice` job.
 
+That document carries `mainDocumentCollectionSource`, set from the `documentType`
+`findContractByPureserviceId` resolved (`'regular'` or `'pcIkkeInnlevert'`). It is a **hint only**:
+the contract moves collections afterwards, and anything writing back to it must resolve the
+collection with `findContractById` first. See
+[docs/pc-ikke-innlevert-lifecycle.md](pc-ikke-innlevert-lifecycle.md#how-an-invoice-finds-its-contract).
+
 ## Dry run
 
 Defaults to a **dry-run preview** - matching this codebase's existing

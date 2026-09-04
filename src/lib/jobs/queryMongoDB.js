@@ -6,6 +6,7 @@ const { mongoDB } = require('../../../config')
 // const { getSchoolyear } = require("../helpers/getSchoolyear")
 const { fillDocument, fillManualDocument } = require('../documentSchema.js')
 const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, getFakturaInfoMismatches } = require('./contractChecks.js')
+const { invoiceQueryForContractIds } = require('./invoiceQueries.js')
 const { patchUser } = require('./queryPureservice')
 const { ObjectId } = require('mongodb')
 const { maskFnr } = require('../helpers/maskFnr')
@@ -248,8 +249,6 @@ const getDocuments = async (query, documentType) => {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicCollection}`).find(query).toArray()
   } else if (documentType === 'pcIkkeInnlevert') {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicPcNotDeliveredCollection}`).find(query).toArray()
-  } else if (documentType === 'history') {
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.historicCollection}`).find(query).toArray()
   } else if (documentType === 'products') {
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.productsCollection}`).find(query).toArray()
   } else if (documentType === 'invoices') {
@@ -515,16 +514,93 @@ const postDigitrollContract = async (contract, targetCollection, contractType) =
 }
 
 /**
+ * The vocabularies moveAndDeleteDocument understands, exported so callers can reject bad input
+ * before it reaches the if/else chains below - an unrecognised source resolves to null and throws on
+ * .collection(null), an unrecognised target leaves collection = '' and throws on createCollection('').
+ * Kept here rather than in the HTTP handler so there is one definition to keep in step.
+ */
+const VALID_MOVE_TARGET_COLLECTIONS = ['deleted', 'historic', 'contracts', 'duplicates', 'pcIkkeInnlevert', 'regular']
+const VALID_MOVE_SOURCE_COLLECTIONS = ['preImport', 'mock', 'regular', 'pcIkkeInnlevert', 'historic', 'error']
+
+/**
+ * Maps a moveAndDeleteDocument targetCollection to the documentType key an invoice's
+ * mainDocumentCollectionSource uses. 'deleted' and 'duplicates' are deliberately absent: neither
+ * holds a contract any lookup can reach (getDocuments exposes no branch for them), so there is no
+ * valid pointer to write and the stored value is left alone rather than replaced with one that
+ * resolves to nothing.
+ */
+const MOVE_TARGET_TO_DOCUMENT_TYPE = {
+  contracts: 'regular',
+  regular: 'regular',
+  pcIkkeInnlevert: 'pcIkkeInnlevert',
+  historic: 'history'
+}
+
+/**
+ * Repoints every invoice belonging to a contract at the collection the contract has just moved to.
+ *
+ * Without this, mainDocumentCollectionSource keeps naming the collection the contract left, and the
+ * buyOut rate write-back in xledgerInvoiceImport.js updates nothing at all - silently, because
+ * updateDocument does not report a miss. See docs/pc-ikke-innlevert-lifecycle.md.
+ *
+ * Callers must treat this as best-effort: it runs after the move has already been committed, so a
+ * failure here must not fail the move. A stale pointer is recoverable (findContractById resolves the
+ * contract regardless, and repairInvoiceCollectionSource fixes the stored value); a half-completed
+ * move is not.
+ * @param {import('mongodb').ObjectId} contractObjectId - the moved contract's _id
+ * @param {String} targetCollection - moveAndDeleteDocument's target vocabulary
+ * @param {Object} [deps]
+ * @param {Function} [deps.getMongoClientFn]
+ * @returns {Promise<{skipped: true, reason: String}|{matched: Number, modified: Number}|{error: String}>}
+ */
+const syncInvoiceCollectionSource = async (contractObjectId, targetCollection, deps = {}) => {
+  const { getMongoClientFn = getMongoClient } = deps
+  const logPrefix = 'syncInvoiceCollectionSource'
+
+  const documentType = MOVE_TARGET_TO_DOCUMENT_TYPE[targetCollection]
+  if (!documentType) {
+    logger('info', [logPrefix, `Target collection '${targetCollection}' har ingen gyldig documentType for fakturaer, hopper over synk for _id: ${contractObjectId}`])
+    return { skipped: true, reason: `Ingen documentType for target collection '${targetCollection}'` }
+  }
+
+  try {
+    const mongoClient = await getMongoClientFn()
+    // Every invoice for the contract, settled or not: filtering on status would leave settled
+    // invoices pointing at the wrong collection, which repairInvoiceCollectionSource would then
+    // report as drift on every run.
+    const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.invoiceCollection}`).updateMany(
+      invoiceQueryForContractIds([contractObjectId]),
+      { $set: { mainDocumentCollectionSource: documentType } }
+    )
+    if (result.matchedCount > 0) {
+      logger('info', [logPrefix, `Oppdaterte mainDocumentCollectionSource til '${documentType}' på ${result.modifiedCount} av ${result.matchedCount} faktura(er) for kontrakt _id: ${contractObjectId}`])
+    }
+    return { matched: result.matchedCount, modified: result.modifiedCount }
+  } catch (error) {
+    // Non-fatal by design - the move is already committed at this point.
+    logger('error', [logPrefix, `Klarte ikke oppdatere mainDocumentCollectionSource for kontrakt _id: ${contractObjectId}. Fakturaene peker fortsatt på forrige collection - kjør repairInvoiceCollectionSource`, error])
+    return { error: error.message }
+  }
+}
+
+/**
  * Flytt et dokument til en annen collection og slett det fra den opprinnelige collection
  * @param {String} documentId | _id til dokumentet som skal slettes
  * @param {String} targetCollection | regular | deleted | historic | contracts | duplicates | pcIkkeInnlevert
  * @param {String} sourceCollection | preImport | mock | regular | pcIkkeInnlevert | historic | error
+ * @param {Object} [deps] | test seam only - every caller uses the defaults
  * @returns
  */
 
-const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollection) => {
+const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollection, deps = {}) => {
+  const {
+    getMongoClientFn = getMongoClient,
+    patchUserFn = patchUser,
+    syncInvoiceCollectionSourceFn = syncInvoiceCollectionSource
+  } = deps
+
   const logPrefix = 'moveAndDeleteDocument'
-  const mongoClient = await getMongoClient()
+  const mongoClient = await getMongoClientFn()
 
   // Valider documentId
   if (!documentId) {
@@ -541,6 +617,15 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
     logger('error', [logPrefix, 'Mangler sourceCollection'])
     return { status: 400, error: 'Mangler sourceCollection' }
   }
+
+  // Normalized once, up front: callers are inconsistent about the type - handleDbRequest passes
+  // jsonBody.contractID as a string, the jobs pass ObjectIds - and the invoice sync below has to
+  // match a stored ObjectId, where a plain string would match nothing at all.
+  if (!ObjectId.isValid(documentId)) {
+    logger('error', [logPrefix, `Ugyldig documentId: ${documentId}`])
+    return { status: 400, error: `Ugyldig documentId: ${documentId}` }
+  }
+  const contractObjectId = new ObjectId(documentId)
 
   const determineSourceCollectionName = (sourceCollection) => {
     if (sourceCollection === 'preImport') {
@@ -562,7 +647,7 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
 
   const moveDocumentToTargetCollection = async (documentId, targetCollection, sourceCollection) => {
     // Find document in the collection you want to delete from. If isMock === true, search in mock collection
-    const docToMove = await mongoClient.db(mongoDB.dbName).collection(determineSourceCollectionName(sourceCollection)).findOne({ _id: new ObjectId(documentId) })
+    const docToMove = await mongoClient.db(mongoDB.dbName).collection(determineSourceCollectionName(sourceCollection)).findOne({ _id: contractObjectId })
 
     if (!docToMove) {
       logger('error', [logPrefix, 'Dokument ikke funnet for flytting'])
@@ -573,7 +658,7 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
     // so reset cf_2 in Pureservice now (it would otherwise stay stale forever) and drop the link.
     if (targetCollection === 'historic' && docToMove.pureserviceId) {
       try {
-        await patchUser(docToMove.pureserviceId, { cf_2: '' })
+        await patchUserFn(docToMove.pureserviceId, { cf_2: '' })
       } catch (error) {
         logger('error', [logPrefix, `Failed to reset cf_2 in Pureservice for user ${docToMove.pureserviceId}, aborting move of document _id: ${documentId}`, error])
         return { status: 502, error: `Failed to reset cf_2 in Pureservice for user ${docToMove.pureserviceId}` }
@@ -634,19 +719,31 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
     logger('info', [logPrefix, `Dokument flyttet til target collection: ${targetCollection}, fortsetter med sletting fra source collection: ${sourceCollection}`])
     try {
       logger('info', [logPrefix, `Sletter dokument med _id: ${documentId} fra source collection: ${sourceCollection}`])
-      result = await mongoClient.db(mongoDB.dbName).collection(determineSourceCollectionName(sourceCollection)).deleteOne({ _id: new ObjectId(documentId) })
+      result = await mongoClient.db(mongoDB.dbName).collection(determineSourceCollectionName(sourceCollection)).deleteOne({ _id: contractObjectId })
     } catch (error) {
       logger('error', [logPrefix, `Feil ved sletting av dokument fra source collection: ${error.message}`])
       return { status: 500, error: `Feil ved sletting av dokument fra source collection: ${error.message}` }
     }
-    
+
     if (result.deletedCount === 0) {
-      logger('error', [logPrefix, 'Dokument ikke funnet'])
+      // The insert succeeded but the delete did not, so the document now exists in BOTH
+      // collections. The invoice sync is deliberately skipped: the copy in the source collection is
+      // still live, so its pointer is not yet wrong, and findContractById searches 'regular' first.
+      logger('error', [logPrefix, `Dokument ikke funnet ved sletting - _id: ${documentId} finnes nå i BÅDE ${determineSourceCollectionName(sourceCollection)} og target collection, og må ryddes manuelt`])
       return { status: 404, error: 'Dokument ikke funnet' }
     }
 
     logger('info', [logPrefix, 'Dokument slettet'])
-    return { status: 200, message: 'Dokument slettet' }
+
+    // Both halves of the move succeeded, so the contract's invoices now name a collection it has
+    // left. Best-effort: never allowed to fail a committed move (see syncInvoiceCollectionSource).
+    // Mock moves are excluded so a test run cannot rewrite real invoice documents.
+    let invoiceSourceSync = { skipped: true, reason: 'mock' }
+    if (sourceCollection !== 'mock') {
+      invoiceSourceSync = await syncInvoiceCollectionSourceFn(contractObjectId, targetCollection)
+    }
+
+    return { status: 200, message: 'Dokument slettet', invoiceSourceSync }
   }
 }
 
@@ -955,5 +1052,9 @@ module.exports = {
   postProduct,
   deleteProduct,
   postExtraInvoice,
-  deleteExtraInvoice
+  deleteExtraInvoice,
+  syncInvoiceCollectionSource,
+  MOVE_TARGET_TO_DOCUMENT_TYPE,
+  VALID_MOVE_TARGET_COLLECTIONS,
+  VALID_MOVE_SOURCE_COLLECTIONS
 }

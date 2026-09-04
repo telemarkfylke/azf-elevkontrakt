@@ -8,6 +8,7 @@
 
 const { ObjectId } = require("mongodb")
 const { getDocuments, updateDocument, postExtraInvoice } = require("./queryMongoDB")
+const { assertContractUpdated } = require("./findContract")
 const { logger } = require("@vtfk/logger")
 const { generateSerialNumber } = require("../helpers/getSerialNumber")
 
@@ -22,7 +23,11 @@ const { generateSerialNumber } = require("../helpers/getSerialNumber")
  * contract and rates.
  * @param {Object} customerContract - full contract document
  * @param {Array<{faktureringsår: *, sum: *}>} buyOutItems
- * @param {string} mainDocumentCollectionSource - 'regular' | 'pcIkkeInnlevert'
+ * @param {string} mainDocumentCollectionSource - 'regular' | 'pcIkkeInnlevert'. Stored on the invoice
+ *   as a HINT ONLY: the contract moves collections over its life and this value goes stale. Anything
+ *   later writing to the contract must resolve the collection via findContractById first - see
+ *   docs/pc-ikke-innlevert-lifecycle.md. Safe to use here because the caller has just read the
+ *   contract out of this very collection.
  * @param {Object} invoiceCreatedBy - { name, givenName, surname, email, companyName, officeLocation, jobTitle }
  * @param {Object} [deps]
  * @returns {Promise<{status: number, body: string}>}
@@ -54,7 +59,22 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
                 updateRate[`fakturaInfo.${rateNumberFull}.status`] = 'Fakturert - Utkjøp'
                 updateRate[`fakturaInfo.${rateNumberFull}.løpenummer`] = serialNumber
                 updateRate[`fakturaInfo.${rateNumberFull}.sum`] = buyOutItem.sum
-                await _updateDocument(customerContract._id, updateRate, mainDocumentCollectionSource)
+                const updateResult = await _updateDocument(customerContract._id, updateRate, mainDocumentCollectionSource)
+                // Largely shielded, since the caller looked the contract up in this same collection
+                // moments ago (a wrong value would have 404'd there) - but if the contract moved in
+                // between, the rate would silently keep 'Ikke Fakturert' and the normal invoice run
+                // would bill the rate we just bought out.
+                //
+                // Bail rather than carry on: with several buyOut items an earlier rate may already
+                // be flipped, so this can leave the contract partially updated - but that is visible
+                // to the caller as a 500 and recoverable by hand, whereas continuing would post an
+                // invoice whose rates the contract does not agree with, which is the silent
+                // divergence this whole check exists to stop.
+                const { updated, reason } = assertContractUpdated(updateResult, `${logPrefix} - kontrakt ${customerContract._id} i '${mainDocumentCollectionSource}'`)
+                if (!updated) {
+                  _logger('error', [logPrefix, `Klarte ikke oppdatere rate${rateNumber} på kontrakt ${customerContract._id}: ${reason}. Avbryter utkjøpsfakturaen - kontrakten kan være delvis oppdatert og må sjekkes.`])
+                  return { status: 500, body: `Internal Server Error: Could not update rate${rateNumber} on the contract: ${reason}` }
+                }
                 rate.løpenummer = serialNumber
                 foundRate = rate
                 break
@@ -76,6 +96,9 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
 
     const buyOutObject = {
         type: 'buyOut',
+        // customerContractId survives every collection move (moveAndDeleteDocument preserves _id),
+        // so it is the reliable link. mainDocumentCollectionSource is only a hint - kept fresh by
+        // moveAndDeleteDocument, but resolve via findContractById before writing to the contract.
         customerContractId: customerContract._id,
         mainDocumentCollectionSource,
         recipient: {

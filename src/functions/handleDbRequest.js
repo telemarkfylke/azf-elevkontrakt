@@ -1,7 +1,8 @@
 const { app } = require('@azure/functions')
-const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument } = require('../lib/jobs/queryMongoDB')
+const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument, VALID_MOVE_TARGET_COLLECTIONS, VALID_MOVE_SOURCE_COLLECTIONS } = require('../lib/jobs/queryMongoDB')
 const { validateRoles } = require('../lib/auth/validateRoles')
 const { archiveDocument } = require('../lib/jobs/queryArchive')
+const { getUnsettledInvoices, describeInvoice } = require('../lib/jobs/invoiceChecks')
 const { logger } = require('@vtfk/logger')
 const { ObjectId } = require('mongodb')
 const { sanitizeErrorForLogging } = require('../lib/helpers/maskFnr')
@@ -206,6 +207,36 @@ app.http('handleDbRequest', {
         if(isMock === true) {
           sourceCollection = 'mock'
         }
+
+        // Validate the effective values, i.e. after the isMock substitution above
+        if (!VALID_MOVE_TARGET_COLLECTIONS.includes(jsonBody.targetCollection)) {
+          logger('error', [`${logPrefix} - DELETE`, `Invalid targetCollection specified: ${jsonBody.targetCollection}`])
+          return { status: 400, body: `Bad Request, invalid targetCollection. Must be one of: ${VALID_MOVE_TARGET_COLLECTIONS.join(', ')}` }
+        }
+        if (!VALID_MOVE_SOURCE_COLLECTIONS.includes(sourceCollection)) {
+          logger('error', [`${logPrefix} - DELETE`, `Invalid sourceCollection specified: ${sourceCollection}`])
+          return { status: 400, body: `Bad Request, invalid sourceCollection. Must be one of: ${VALID_MOVE_SOURCE_COLLECTIONS.join(', ')}` }
+        }
+
+        // historiske-avtaler is the final archive: no job revisits it and the Pureservice link is
+        // cleared on the way in, so a contract that still owes money must not land there. Both
+        // automated archive paths (updateStudentInfo, archiveResolvedPcIkkeInnlevert) apply this
+        // same gate from invoiceChecks.js - this was the one route that bypassed it, which is how a
+        // contract with a live invoice could reach the archive at all.
+        if (jsonBody.targetCollection === 'historic') {
+          const unsettledInvoices = await getUnsettledInvoices(jsonBody.contractID)
+          if (unsettledInvoices.length > 0) {
+            logger('warn', [`${logPrefix} - DELETE`, `Blocked archiving of contract ${jsonBody.contractID} to historiske-avtaler: ${unsettledInvoices.length} unsettled invoice(s)`, unsettledInvoices.map(invoice => `${invoice.type}: ${invoice.status}`).join('; ')])
+            return {
+              status: 409,
+              jsonBody: {
+                error: 'Kontrakten har uoppgjorte fakturaer og kan ikke arkiveres. Krediter fakturaen eller registrer betaling først.',
+                invoices: unsettledInvoices.map(describeInvoice)
+              }
+            }
+          }
+        }
+
         const result = await moveAndDeleteDocument(jsonBody.contractID, jsonBody.targetCollection, sourceCollection) // Source MIGHT be isMock
         if (result.status === 200) {
           logger('info', [`${logPrefix} - DELETE`, `Document with ID ${jsonBody.contractID} deleted successfully`])

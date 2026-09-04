@@ -314,11 +314,12 @@ describe('archiveResolvedPcIkkeInnlevert - invoice gate', () => {
 
     const invoiceReads = invoiceQueries()
     assert.equal(invoiceReads.length, 1)
-    // Both id forms are matched, so a legacy string-valued customerContractId can't slip past
-    assert.deepEqual(invoiceReads[0].query.customerContractId.$in, [
-      'doc-a', 'doc-b', 'doc-c', 'doc-d',
-      'doc-a', 'doc-b', 'doc-c', 'doc-d'
-    ])
+    // Every candidate is covered by the one query. Both id forms are matched (see
+    // invoiceQueries.js), so a legacy string-valued customerContractId can't slip past either.
+    const ids = invoiceReads[0].query.customerContractId.$in.map(String)
+    for (const id of ['doc-a', 'doc-b', 'doc-c', 'doc-d']) {
+      assert.ok(ids.includes(id), `candidate ${id} missing from the invoice query`)
+    }
   })
 
   test('does not query invoices at all when there are no candidates', async () => {

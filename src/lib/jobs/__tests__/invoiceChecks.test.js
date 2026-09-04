@@ -2,6 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
+const { ObjectId } = require('mongodb')
 const {
   isInvoiceSettled,
   describeInvoice,
@@ -116,12 +117,20 @@ describe('fetchInvoicesByContract', () => {
   })
 
   test('reads the invoices collection once, querying both id forms', async () => {
+    // Real ObjectIds, since the point of the two forms is that a stored ObjectId and a legacy
+    // string-valued customerContractId are both matched
+    const first = new ObjectId('507f1f77bcf86cd799439011')
+    const second = new ObjectId('507f1f77bcf86cd799439022')
     const { getDocumentsFn, queries } = makeReader([makeInvoice()])
-    await fetchInvoicesByContract([{ _id: 'doc-1' }, { _id: 'doc-2' }], getDocumentsFn)
+    await fetchInvoicesByContract([{ _id: first }, { _id: second }], getDocumentsFn)
 
     assert.equal(queries.length, 1)
     assert.equal(queries[0].documentType, 'invoices')
-    assert.deepEqual(queries[0].query.customerContractId.$in, ['doc-1', 'doc-2', 'doc-1', 'doc-2'])
+    const ids = queries[0].query.customerContractId.$in
+    for (const id of [first, second]) {
+      assert.ok(ids.some(candidate => candidate instanceof ObjectId && candidate.equals(id)), `missing ObjectId form of ${id}`)
+      assert.ok(ids.includes(String(id)), `missing string form of ${id}`)
+    }
   })
 
   test('returns an empty map when getDocuments answers 404', async () => {
@@ -182,13 +191,19 @@ describe('getUnsettledInvoices', () => {
     assert.deepEqual(await getUnsettledInvoices('doc-1', { getDocumentsFn }), [])
   })
 
-  test('queries the invoices collection for both id forms of the one contract', async () => {
+  test('queries both id forms even when handed a plain string', async () => {
+    // handleDbRequest's DELETE gate passes jsonBody.contractID, a string off the wire, while the
+    // jobs pass an ObjectId. If the string were not normalized the $in would match no stored
+    // ObjectId at all - the gate would find nothing unsettled and wave the contract through.
+    const contractId = '507f1f77bcf86cd799439011'
     const { getDocumentsFn, queries } = makeReader([makeInvoice()])
-    await getUnsettledInvoices('doc-1', { getDocumentsFn })
+    await getUnsettledInvoices(contractId, { getDocumentsFn })
 
     assert.equal(queries.length, 1)
     assert.equal(queries[0].documentType, 'invoices')
-    assert.deepEqual(queries[0].query.customerContractId.$in, ['doc-1', 'doc-1'])
+    const ids = queries[0].query.customerContractId.$in
+    assert.ok(ids.some(id => id instanceof ObjectId && id.equals(new ObjectId(contractId))), 'missing ObjectId form')
+    assert.ok(ids.includes(contractId), 'missing string form')
   })
 
   test('catches a buyOut whose top-level status is settled but a rate is not', async () => {

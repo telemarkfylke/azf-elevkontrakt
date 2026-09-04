@@ -13,6 +13,7 @@
  */
 
 const { getDocuments } = require('./queryMongoDB')
+const { invoiceQueryForContractIds } = require('./invoiceQueries')
 
 const SETTLED_INVOICE_STATUSES = ['Betalt', 'Kreditert']
 
@@ -35,15 +36,6 @@ const describeInvoice = (invoice) => ({
   type: invoice.type,
   status: invoice.status,
   rateStatuses: (invoice.rates ?? []).map(rate => rate.status)
-})
-
-/**
- * customerContractId is written as the raw ObjectId (processInvoices.js), so that is the expected
- * form, but the string form is matched too: a missed invoice would mean wrongly archiving a
- * contract that still owes money, and a two-element-per-id $in costs nothing.
- */
-const invoiceQueryForContractIds = (contractIds) => ({
-  customerContractId: { $in: [...contractIds, ...contractIds.map(id => String(id))] }
 })
 
 /**

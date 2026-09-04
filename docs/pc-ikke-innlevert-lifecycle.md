@@ -23,9 +23,14 @@ flowchart TD
 
     GATE{"invoice gate — invoiceChecks.js<br/>every buyOut and extraInvoice settled?"}
     GATE -->|"no — money still outstanding"| PEN
+    GATE -->|"no — via DELETE"| R409["409 + the blocking invoices<br/>admin credits the invoice or<br/>registers payment first"]
     GATE -->|"yes"| ARCH[("historiske-avtaler<br/>final archive — no job revisits it;<br/>cf_2 reset in Pureservice, pureserviceId dropped")]
 
     PEN[("historiske-avtaler-pc-ikke-innlevert<br/>holding pen — not settled, not frozen")]
+
+    SYNC["every move also repoints the contract's invoices:<br/>moveAndDeleteDocument → syncInvoiceCollectionSource<br/>sets invoices.mainDocumentCollectionSource to the new collection"]
+    PEN -.- SYNC
+    ARCH -.- SYNC
 
     subgraph sitting["2 · Sitting there — jobs keep writing in place"]
         WRITES["updatePaymentStatusPCNotDelivered · 04:00 → rate status from Xledger<br/>syncPureserviceStudentsPcIkkeLevert · 07:15 → pureserviceId<br/>syncPureserviceAssetLifecycle · 21:00 → pcInfo + buyout invoice<br/>updatePCStatus (HTTP) / handleDbRequest PUT → pcInfo<br/>every pcInfo write goes through updateContractPCStatus"]
@@ -43,13 +48,14 @@ flowchart TD
     PEN --> CAND
     DEC -->|"yes"| RULE
 
-    MAN["DELETE /api/handleDbRequest<br/>manual route out, admin UI"] --> ARCH
+    MAN["DELETE /api/handleDbRequest<br/>manual route out, admin UI"] --> GATE
 ```
 
-The rule and the invoice gate are drawn once on purpose: both directions call the same two,
-which is why the inbound router and the outbound sweep can never disagree about where a
-contract belongs. A contract routed back to the holding pen from either gate is what the
-sweep reports as `skippedStillUnresolved` / `skippedUnsettledInvoices`.
+The rule and the invoice gate are drawn once on purpose: all three routes call the same two,
+which is why the inbound router, the outbound sweep and the admin UI can never disagree about
+where a contract belongs. A contract routed back to the holding pen from either gate is what the
+sweep reports as `skippedStillUnresolved` / `skippedUnsettledInvoices`; the admin `DELETE` gets a
+`409` instead, since there is a human to tell.
 
 ## What the collection means
 
@@ -98,23 +104,61 @@ still unpaid. The `invoices` collection holds two kinds of document, both keyed 
   all**. This is the case that motivates the gate: the rate rule structurally cannot see it.
 
 So a contract never reaches `historiske-avtaler` while any invoice against it is unsettled. This
-applies to **both** archive paths - `updateStudentInfo` on the way in and
-`archiveResolvedPcIkkeInnlevert` on the way out - and lives in
-`src/lib/jobs/invoiceChecks.js` so the two cannot diverge.
+applies to **all three** archive paths - `updateStudentInfo` on the way in,
+`archiveResolvedPcIkkeInnlevert` on the way out, and the admin UI's
+`DELETE /api/handleDbRequest` - and lives in `src/lib/jobs/invoiceChecks.js` so they cannot
+diverge.
 
 An invoice counts as settled only when its **top-level `status` and every entry in `rates[]`** are
-`Betalt` or `Kreditert`. Both halves are needed - the top-level status is recomputed from
-`rates[]` only inside the manual `repairBuyOutInvoiceStatuses` job, so a `buyOut` invoice's
-top-level value can be stale. An `extraInvoice` carries `rates: []` and is decided by its
-top-level status alone.
+`Betalt` or `Kreditert`. Both halves are needed: nothing recomputes a `buyOut` invoice's top-level
+status from its `rates[]`, so that value can always be behind what the rates actually say. (This
+used to be phrased as "recomputed only inside `repairBuyOutInvoiceStatuses`" - that job is retired,
+which makes the both-halves check more necessary, not less.) An `extraInvoice` carries `rates: []`
+and is decided by its top-level status alone.
 
-This is deliberately stricter than `TERMINAL_STATUSES` in `repairBuyOutInvoiceStatuses`, which
-also counts `Overført inkasso`: an invoice reaching a final state is not the same as the money
-being settled, and inkasso already blocks on the contract side.
+`Overført inkasso` deliberately does **not** count as settled here: an invoice reaching a final
+state is not the same as the money being settled, and inkasso already blocks on the contract side.
 
 The query matches `customerContractId` in both `ObjectId` and string form; it is written as a raw
 `ObjectId` (`processInvoices.js`), but a missed invoice would mean wrongly archiving a contract
-that still owes money, so both are covered.
+that still owes money, so both are covered. The builder lives in `src/lib/jobs/invoiceQueries.js`
+rather than in `invoiceChecks.js`, because `queryMongoDB.js` needs it too and `invoiceChecks.js`
+already requires `queryMongoDB.js` - a leaf module both can import avoids the require cycle.
+
+## How an invoice finds its contract
+
+Two fields on an invoice point at its contract, and they are not equally trustworthy.
+
+**`customerContractId` is the reliable link.** `moveAndDeleteDocument` preserves `_id` across every
+move (`findOne` then `insertOne(docToMove)`), so this value stays correct for the life of the
+contract no matter how many collections it passes through. That is why the invoice gate above joins
+on it alone.
+
+**`mainDocumentCollectionSource` is a hint, not truth.** It records the `documentType`
+(`regular` | `pcIkkeInnlevert` | `history`) the contract lived in *when the invoice was created*.
+`moveAndDeleteDocument` now keeps it in step on every move, via `syncInvoiceCollectionSource` - but
+that sync is best-effort by design: it runs after the move has been committed, so a failure there
+logs and leaves a stale pointer rather than failing a half-completed move. **Anything about to write
+to the contract must resolve the collection with `findContractById`
+(`src/lib/jobs/findContract.js`) first**, and run the result through `assertContractUpdated`,
+because `updateDocument` returns the raw Mongo result and never reports a miss.
+
+The non-obvious part: **the invoice gate is what made this pointer go stale in the first place.**
+`Fakturert` is not a settled status, so a student who leaves with a live buyOut invoice has their
+contract routed to the holding pen - which is exactly the gate doing its job. The invoice, created
+while the contract was still in `kontrakter`, went on saying `regular`. The buyOut import then wrote
+the `Fakturert` rate data into `kontrakter`, matched nothing, logged success, and the contract was
+stranded: its rate never got a `løpenummer`, so no payment sweep could match it, and it kept a
+status `determineHistoryMoveTarget` accepts in no branch, so it could never leave the holding pen.
+
+`historiske-avtaler` is **not** writable for these rate write-backs - it is the final archive. A
+contract found there is reported for a manual move back out (its own Teams card from the Xledger
+import) rather than written to. With the `DELETE` route now gated, a contract with a live invoice
+should not be able to get in there at all, so that report means an invariant was broken.
+
+`repairInvoiceCollectionSource` (`miscCleanUpJobs.js`, dry-run by default) resolves every invoice's
+contract and repairs stale pointers, and reports the invoices whose contract cannot be resolved at
+all - including a read-only probe of `duplicates` and `deleted`, which no contract lookup can reach.
 
 ## 1. Getting in
 
@@ -192,9 +236,26 @@ contract id (`fetchInvoicesByContract`) - the bulk pre-filter pattern from
 single-contract `getUnsettledInvoices` instead, since only a handful of documents per run reach
 the archive decision there.
 
-The **manual** route out is unchanged and still available: `DELETE /api/handleDbRequest` with
+The **manual** route out is still available: `DELETE /api/handleDbRequest` with
 `{ contractID, targetCollection: 'historic', sourceCollection: 'pcIkkeInnlevert' }`, which is
-what the admin UI calls.
+what the admin UI calls. It is no longer unconditional, though:
+
+- Archiving to `historic` applies the same invoice gate as the automated paths. If any invoice
+  against the contract is unsettled the call returns **`409`** with the blocking invoices in the
+  body, so the UI can show *which* invoice is holding the contract back. There is no force
+  override - the way to archive a contract with a written-off invoice is to mark that invoice
+  `Kreditert`, which the gate then accepts.
+- `targetCollection` and `sourceCollection` are allowlisted against the vocabularies
+  `moveAndDeleteDocument` actually accepts (exported from `queryMongoDB.js` so there is one
+  definition), returning `400` on anything else. Previously an unknown source reached
+  `.collection(null)` and threw, and an unknown target left the collection name empty and threw on
+  `createCollection('')`.
+
+This mattered because the `DELETE` was the one remaining route that could put a contract with a
+live invoice into the final archive - where no job revisits it and the Pureservice link has already
+been cleared. Note the endpoint is reachable with only a `?school` query param when the
+`elevkontrakt.administrator-readwrite` role check fails, so the gate has to live in the backend;
+hiding the action in the admin UI would not hold.
 
 ### Why leaving matters beyond tidiness
 
@@ -258,13 +319,16 @@ Example dry-run response:
 
 | File | Purpose |
 |------|---------|
-| `src/lib/jobs/contractChecks.js` | `determineHistoryMoveTarget` - the single eligibility rule, shared by both directions |
-| `src/lib/jobs/invoiceChecks.js` | The invoice gate - `isInvoiceSettled`, `getUnsettledInvoices`, `fetchInvoicesByContract`, also shared by both directions |
+| `src/lib/jobs/contractChecks.js` | `determineHistoryMoveTarget` - the single eligibility rule, shared by all archive paths |
+| `src/lib/jobs/invoiceChecks.js` | The invoice gate - `isInvoiceSettled`, `getUnsettledInvoices`, `fetchInvoicesByContract`, `describeInvoice` |
+| `src/lib/jobs/invoiceQueries.js` | `invoiceQueryForContractIds` - the `ObjectId`/string `$in`, in a leaf so both `invoiceChecks` and `queryMongoDB` can use it |
+| `src/lib/jobs/findContract.js` | `findContractById` - resolves a contract's collection by `_id`; the authority `mainDocumentCollectionSource` is only a hint for. Also `assertContractUpdated` |
 | `src/lib/jobs/updateStudentInfo.js` | Routes contracts *into* the collection when a student leaves |
 | `src/lib/jobs/archiveResolvedPcIkkeInnlevert.js` | Sweeps settled contracts *out* to `historiske-avtaler` |
 | `src/functions/archiveResolvedPcIkkeInnlevert.js` | Timer + dev HTTP trigger |
-| `src/lib/jobs/queryMongoDB.js` | `moveAndDeleteDocument` (incl. the Pureservice `cf_2` reset), `updateContractPCStatus` |
+| `src/lib/jobs/queryMongoDB.js` | `moveAndDeleteDocument` (incl. the Pureservice `cf_2` reset and `syncInvoiceCollectionSource`), `updateContractPCStatus`, the move-collection allowlists |
 | `src/lib/jobs/processInvoices.js` | Writes the `buyOut` / `extraInvoice` documents the invoice gate reads |
-| `src/lib/jobs/serverJobs/miscCleanUpJobs.js` | `repairBuyOutInvoiceStatuses` - resyncs invoice statuses from contracts |
-| `src/functions/handleDbRequest.js` | The manual, admin-UI-driven move (`DELETE`) |
+| `src/lib/jobs/serverJobs/xledgerInvoiceImport.js` | The buyOut rate write-back - resolves the contract's collection, and reports what it could not update |
+| `src/lib/jobs/serverJobs/miscCleanUpJobs.js` | `repairInvoiceCollectionSource` - repairs stale invoice pointers (`repairBuyOutInvoiceStatuses` is retired) |
+| `src/functions/handleDbRequest.js` | The manual, admin-UI-driven move (`DELETE`), now invoice-gated |
 | `docs/pureservice-asset-lifecycle.md` | The job that backfills `pcInfo` here from Pureservice |

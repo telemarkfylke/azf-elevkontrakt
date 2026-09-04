@@ -1,4 +1,5 @@
 const { getDocuments, updateDocument } = require('../queryMongoDB.js')
+const { findContractById, assertContractUpdated } = require('../findContract.js')
 const { logger } = require('@vtfk/logger')
 const fs = require('fs')
 const path = require('path')
@@ -197,7 +198,7 @@ const createCsvString = async (csvData) => {
  * @param {string} type | The type of invoice import (buyOut, extraInvoice, normalInvoice)
  */
 const sendTeamsMessage = async (message, type) => {
-  const { updateCount, failedToUpdate } = message
+  const { updateCount, failedToUpdate = [] } = message
   const teamsMsg = {
     type: 'message',
     attachments: [
@@ -295,8 +296,66 @@ const sendImportFailureAlert = async (type, error) => {
   const headers = { contentType: 'application/vnd.microsoft.teams.card.o365connector' }
   return await axios.post(teams.webhook, teamsMsg, { headers })
 }
+
 /**
- * 
+ * Alerts on invoices that reached Xledger successfully but whose parent contract could not be
+ * updated - a stranded contract, not a failed invoice.
+ *
+ * Deliberately its own card rather than an extra FactSet on sendTeamsMessage: that card's heading
+ * reads "kunne ikke oppdateres" and prints only a document id, which would misdescribe these. The
+ * student HAS been invoiced; what is missing is the rate status on the contract, and fixing it needs
+ * the contract id, the rate and the exact update that was refused - all of which are printed here.
+ * @param {String} importType | The type of invoice import (buyOut, extraInvoice, normalInvoice)
+ * @param {Array<Object>} failedContractUpdates
+ */
+const sendContractWriteBackAlert = async (importType, failedContractUpdates) => {
+  const teamsMsg = {
+    type: 'message',
+    attachments: [
+      {
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        contentUrl: null,
+        content: {
+          $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+          type: 'AdaptiveCard',
+          version: '1.5',
+          msteams: { width: 'full' },
+          body: [
+            {
+              type: 'TextBlock',
+              text: `Krever oppfølging - azf-elevkontrakt - ${importType} fakturaimport til Xledger`,
+              wrap: true,
+              style: 'heading'
+            },
+            {
+              type: 'TextBlock',
+              text: `**${failedContractUpdates.length}** faktura(er) ble fakturert i Xledger, men raten kunne **ikke** oppdateres på kontrakten. Fakturaen er altså sendt - det er kontrakten som mangler statusen, og den må rettes manuelt.`,
+              wrap: true,
+              weight: 'Bolder',
+              size: 'Medium'
+            },
+            ...failedContractUpdates.map(failure => ({
+              type: 'FactSet',
+              facts: [
+                { title: 'Faktura ID:', value: String(failure.invoiceId) },
+                { title: 'Kontrakt ID:', value: String(failure.customerContractId) },
+                { title: 'Collection:', value: failure.documentType || 'ikke funnet' },
+                { title: 'Rate:', value: `rate${failure.rateNumber} (${failure.løpenummer})` },
+                { title: 'Årsak:', value: failure.reason },
+                { title: 'Avvist oppdatering:', value: JSON.stringify(failure.refusedUpdate ?? {}) }
+              ]
+            }))
+          ]
+        }
+      }
+    ]
+  }
+  const headers = { contentType: 'application/vnd.microsoft.teams.card.o365connector' }
+  return await axios.post(teams.webhook, teamsMsg, { headers })
+}
+
+/**
+ *
  * @param {String} customerContractId | The ID of the customer contract to find the invoice document for
  * @param {String} type | [buyOut, extraInvoice]
  * @returns | The invoice document(s) that match the criteria, or an empty array if no document is found
@@ -316,8 +375,12 @@ const findInvoiceDocument = async (document, type) => {
 
     invoiceResult = await getDocuments(query, 'invoices')
   } else if (type === 'extraInvoice') {
-    const query = { 
-      type: 'extraInvoice', 
+    // Dummy4 is the invoice _id here too (xledgerExtraInvoice.js sets it from invoice._id for both
+    // types). Without the _id filter this returned every pending extraInvoice in the system, so the
+    // length === 0 guard below could never trip for the invoice actually being processed.
+    const query = {
+      _id: new ObjectId(customerContractId),
+      type: 'extraInvoice',
       status: 'Ikke Fakturert',
     }
 
@@ -330,6 +393,122 @@ const findInvoiceDocument = async (document, type) => {
   } else {
     return invoiceResult.result
   }
+}
+
+/**
+ * Writes one imported buyOut rate back to both the invoice document and its parent contract.
+ *
+ * Split out of generateInvoiceImportFile so it can be tested: by the time this runs the CSV is
+ * already in Xledger, so the ordering guarantees below are the only thing standing between a failed
+ * contract write and a double-invoiced student.
+ *
+ * Two rules hold in every branch:
+ *
+ * 1. The invoice document is ALWAYS updated, even when the contract write fails. The
+ *    xledgerExtraInvoice job selects candidates on `status: 'Ikke Fakturert'`, so an invoice left
+ *    unflipped is re-sent to Xledger on the next run - the student is invoiced twice. A contract
+ *    that is merely behind can be repaired; a duplicate invoice cannot be un-sent.
+ * 2. The collection is resolved from the database, never from the invoice's
+ *    mainDocumentCollectionSource. That field records where the contract lived when the invoice was
+ *    created, and the contract has very likely moved since - a student who leaves with an
+ *    outstanding invoice is archived to historiske-avtaler-pc-ikke-innlevert by design. Writing to
+ *    the stale collection matched nothing, silently, and stranded the contract there for good.
+ *
+ * @param {Object} invoiceDocument - the buyOut invoice document
+ * @param {String} orderNo - the CSV row's 'Order No' (the rate's løpenummer)
+ * @param {Number} rateNumber - rate number parsed out of orderNo
+ * @param {Object} updateData - the fakturaInfo.rateN update built by the caller
+ * @param {Object} [deps]
+ * @returns {Promise<{contractUpdated: boolean, invoiceUpdated: boolean, failure: Object|null}>}
+ */
+const updateImportedBuyOutDocument = async (invoiceDocument, orderNo, rateNumber, updateData, deps = {}) => {
+  const {
+    findContractByIdFn = findContractById,
+    updateDocumentFn = updateDocument,
+    logger: _logger = logger
+  } = deps
+
+  const logPrefix = 'updateImportedBuyOutDocument'
+
+  // Find the rate FIRST before updating anything — avoids partial updates if the rate is missing
+  const rateToUpdate = invoiceDocument.rates.find(rate => rate.løpenummer === orderNo)
+  if (!rateToUpdate) {
+    _logger('error', [logPrefix, `No rate found with løpenummer: ${orderNo} in invoice document with _id: ${invoiceDocument._id}. Skipping updating this invoice document.`])
+    return {
+      contractUpdated: false,
+      invoiceUpdated: false,
+      failure: {
+        invoiceId: String(invoiceDocument._id),
+        customerContractId: String(invoiceDocument.customerContractId),
+        løpenummer: orderNo,
+        rateNumber,
+        documentType: null,
+        reason: `Fant ingen rate med løpenummer ${orderNo} i fakturadokumentet`
+      }
+    }
+  }
+  const rateIndex = invoiceDocument.rates.indexOf(rateToUpdate) + 1
+
+  // Update the main contract — use 'Fakturert - Utkjøp' to preserve the buyOut-specific status
+  const buyOutContractUpdateData = {
+    ...updateData,
+    [`fakturaInfo.rate${rateNumber}.status`]: 'Fakturert - Utkjøp'
+  }
+
+  let failure = null
+  let contractUpdated = false
+  try {
+    const { documentType } = await findContractByIdFn(invoiceDocument.customerContractId)
+
+    if (documentType === null) {
+      _logger('error', [logPrefix, `No contract found in any collection for customerContractId: ${invoiceDocument.customerContractId} (invoice _id: ${invoiceDocument._id}). The invoice is invoiced in Xledger but the contract cannot be updated.`])
+      failure = { documentType: null, reason: 'Fant ingen kontrakt i kontrakter, pc-ikke-innlevert eller historiske-avtaler' }
+    } else if (documentType === 'history') {
+      // historiske-avtaler is the final archive and is not written to. Reaching this means a
+      // contract with a live invoice got in there anyway - the DELETE route is now gated, so this
+      // is an invariant violation, not a routine outcome. Reported for a manual move back out.
+      _logger('error', [logPrefix, `Contract ${invoiceDocument.customerContractId} is in historiske-avtaler, which is not writable. Rate ${rateNumber} was NOT updated (invoice _id: ${invoiceDocument._id}). Move the contract back to kontrakter or pc-ikke-innlevert and re-apply manually.`])
+      failure = { documentType, reason: 'Kontrakten ligger i historiske-avtaler (endelig arkiv) og kan ikke oppdateres. Flytt den ut av arkivet og påfør raten manuelt.' }
+    } else {
+      const updateResult = await updateDocumentFn(invoiceDocument.customerContractId, buyOutContractUpdateData, documentType)
+      const { updated, reason } = assertContractUpdated(updateResult, `${logPrefix} - kontrakt ${invoiceDocument.customerContractId} i '${documentType}'`)
+      if (updated) {
+        contractUpdated = true
+        _logger('info', [logPrefix, `Updated contract with customerContractId: ${invoiceDocument.customerContractId} in '${documentType}' && invoice _id: ${invoiceDocument._id}`])
+      } else {
+        failure = { documentType, reason }
+      }
+    }
+  } catch (error) {
+    // Contained on purpose: the invoice write below must happen regardless (rule 1 above).
+    _logger('error', [logPrefix, `Error updating contract ${invoiceDocument.customerContractId} for invoice _id: ${invoiceDocument._id}`, error])
+    failure = { documentType: null, reason: `Feil ved oppdatering av kontrakt: ${error.message}` }
+  }
+
+  if (failure) {
+    failure = {
+      invoiceId: String(invoiceDocument._id),
+      customerContractId: String(invoiceDocument.customerContractId),
+      løpenummer: orderNo,
+      rateNumber,
+      refusedUpdate: buyOutContractUpdateData,
+      ...failure
+    }
+  }
+
+  // Always runs - see rule 1.
+  const updatedRateData = {
+    status: 'Fakturert',
+    [`itemsFromCart.${rateIndex - 1}.status`]: 'Fakturert',
+    [`itemsFromCart.${rateIndex - 1}.faktureringsDato`]: new Date().toISOString(),
+    [`itemsFromCart.${rateIndex - 1}.løpenummer`]: orderNo,
+    [`rates.${rateIndex - 1}.status`]: 'Fakturert',
+    [`rates.${rateIndex - 1}.faktureringsDato`]: new Date().toISOString(),
+  }
+  await updateDocumentFn(invoiceDocument._id, updatedRateData, 'invoices')
+  _logger('info', [logPrefix, `Updated buyOut document with _id: ${invoiceDocument._id} as imported to Xledger`])
+
+  return { contractUpdated, invoiceUpdated: true, failure }
 }
 
 const generateInvoiceImportFile = async (importType, csvDataArray) => {
@@ -365,6 +544,11 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
     batches = Math.ceil(csvDataArray.length / rowsPerBatch)
   }
   const failedToUpdate = []
+  // Contract write-backs that failed while the invoice itself reached Xledger fine. Kept apart from
+  // failedToUpdate because they mean something different, and reported on their own Teams card.
+  const failedContractUpdates = []
+  // Rows actually written back, so the Teams report can stop claiming every CSV row succeeded.
+  let updatedCount = 0
   for (let i = 0; i < batches; i++) {
     let batchData
     if (rowsPerBatch !== 0) {
@@ -420,41 +604,34 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
         }
 
         if(importType === 'normalInvoice') {
-          await updateDocument(document.Dummy4, updateData, 'regular')
+          const normalResult = await updateDocument(document.Dummy4, updateData, 'regular')
+          const { updated, reason } = assertContractUpdated(normalResult, `updateImportedDocument - kontrakt ${document.Dummy4} i 'regular'`)
+          if (!updated) {
+            failedToUpdate.push(document.Dummy4)
+            logger('error', ['logPrefix - updateImportedDocument', `Failed to update document with _id: ${document.Dummy4}: ${reason}`])
+            continue
+          }
+          updatedCount++
           logger('info', ['logPrefix - updateImportedDocument', `Updated document with _id: ${document.Dummy4}`])
         } else if (importType === 'buyOut') {
+          // findInvoiceDocument queries by _id, so this is at most one document. The multiplicity
+          // is the other way round: handleBuyOutInvoice emits one CSV row per rate, all sharing
+          // Dummy4 = invoice._id, so the same invoice is processed once per rate.
           const invoiceDocuments = await findInvoiceDocument(document, 'buyOut')
           if(invoiceDocuments.length === 0) {
             logger('error', ['updateImportedDocument', `No invoice document found for invoice with _id: ${document.Dummy4} and løpenummer: ${document['Order No']}. Skipping updating the invoice document.`])
             continue
           }
           for (const invoiceDocument of invoiceDocuments) {
-            // Find the rate FIRST before updating anything — avoids partial updates if the rate is missing
-            const rateToUpdate = invoiceDocument.rates.find(rate => rate.løpenummer === document['Order No'])
-            if (!rateToUpdate) {
-              logger('error', ['logPrefix - updateImportedDocument', `No rate found with løpenummer: ${document['Order No']} in invoice document with _id: ${invoiceDocument._id}. Skipping updating this invoice document.`])
-              continue
+            const { contractUpdated, invoiceUpdated, failure } = await updateImportedBuyOutDocument(
+              invoiceDocument, document['Order No'], rateNumber, updateData
+            )
+            if (failure) {
+              failedContractUpdates.push(failure)
             }
-            const rateIndex = invoiceDocument.rates.indexOf(rateToUpdate) + 1
-
-            // Update the main contract — use 'Fakturert - Utkjøp' to preserve the buyOut-specific status
-            const buyOutContractUpdateData = {
-              ...updateData,
-              [`fakturaInfo.rate${rateNumber}.status`]: 'Fakturert - Utkjøp'
+            if (invoiceUpdated && contractUpdated) {
+              updatedCount++
             }
-            await updateDocument(invoiceDocument.customerContractId, buyOutContractUpdateData, invoiceDocument.mainDocumentCollectionSource)
-            logger('info', ['logPrefix - updateImportedDocument', `Updated document with customerContractId: ${invoiceDocument.customerContractId} && _id: ${invoiceDocument._id}`])
-
-            const updatedRateData = {
-              status: 'Fakturert',
-              [`itemsFromCart.${rateIndex - 1}.status`]: 'Fakturert',
-              [`itemsFromCart.${rateIndex - 1}.faktureringsDato`]: new Date().toISOString(),
-              [`itemsFromCart.${rateIndex - 1}.løpenummer`]: document['Order No'],
-              [`rates.${rateIndex - 1}.status`]: 'Fakturert',
-              [`rates.${rateIndex - 1}.faktureringsDato`]: new Date().toISOString(),
-            }
-            await updateDocument(invoiceDocument._id, updatedRateData, 'invoices')
-            logger('info', ['logPrefix - updateImportedDocument', `Updated buyOut document with _id: ${invoiceDocument._id} as imported to Xledger`])
           }
 
         } else if (importType === 'extraInvoice') {
@@ -482,7 +659,8 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
 
           // Save the last "Order No" processed.
           lastExtraInvoiceOrderNo = document['Order No']
-          
+
+          updatedCount++
           logger('info', ['logPrefix - updateImportedDocument', `Updated document with _id: ${document.Dummy4}`])
         }
       } catch (error) {
@@ -491,22 +669,33 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
       }
     }
   }
-  // After processing all batches, send a message to teams with the results of the import and update process (One for each import type)
+  // After processing all batches, send a message to teams with the results of the import and update
+  // process (One for each import type). updateCount is what was actually written back, not
+  // csvDataArray.length - reporting the row count made a batch where every write-back failed look
+  // like a clean run.
   if(importType === 'normalInvoice') {
-    logger('info', [logPrefix, `Invoice import completed. ${csvDataArray.length} invoices imported and marked as 'Fakturert' in the database.`])
-    await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, `normalInvoice`)
+    logger('info', [logPrefix, `Invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database.`])
+    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate }, `normalInvoice`)
   } else if (importType === 'buyOut') {
-    logger('info', [logPrefix, `BuyOut invoice import completed. ${csvDataArray.length} invoices imported and marked as 'Fakturert' in the database.`])
-    await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, `buyOut`)
+    logger('info', [logPrefix, `BuyOut invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database.`])
+    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate }, `buyOut`)
   } else if (importType === 'extraInvoice') {
-    logger('info', [logPrefix, `Extra invoice import completed. ${csvDataArray.length} invoices imported and marked as 'Fakturert' in the database.`])
-    await sendTeamsMessage({ updateCount: csvDataArray.length, failedToUpdate }, `extraInvoice`)
+    logger('info', [logPrefix, `Extra invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database.`])
+    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate }, `extraInvoice`)
   }
 
-  return { csvDataArray }
+  // Separate card: these invoices ARE in Xledger, only their contract mirror is behind. Folding
+  // them into the card above would file them under "kunne ikke oppdateres", which misdescribes them.
+  if (failedContractUpdates.length > 0) {
+    await sendContractWriteBackAlert(importType, failedContractUpdates)
+  }
+
+  return { csvDataArray, updatedCount, failedToUpdate, failedContractUpdates }
 }
 
 module.exports = {
   generateInvoiceImportFile,
-  sendImportFailureAlert
+  sendImportFailureAlert,
+  sendContractWriteBackAlert,
+  updateImportedBuyOutDocument
 }
