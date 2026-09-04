@@ -17,8 +17,10 @@
     await sendImportFailureAlert('extraInvoice/buyOut', error)
   }
 
-  if (statusInvoice?.extraInvoiceResults) {
-    logger('info', [`Finished generateInvoiceImportFile job for invoices. Number of extra invoices imported: ${statusInvoice?.extraInvoiceResults?.csvDataArray.length} & Number of buyOut invoices imported: ${statusInvoice?.buyOutResults?.csvDataArray.length}`])
+  if (statusInvoice?.extraInvoiceResults || statusInvoice?.buyOutResults) {
+    // Optional chaining all the way down: a run with nothing to import returns no CSV rows, which used
+    // to make this line a TypeError instead of a log message.
+    logger('info', [`Finished generateInvoiceImportFile job for invoices. Number of extra invoices imported: ${statusInvoice?.extraInvoiceResults?.csvDataArray?.length ?? 0} & Number of buyOut invoices imported: ${statusInvoice?.buyOutResults?.csvDataArray?.length ?? 0}. Left alone (recipient not imported to Xledger): ${(statusInvoice?.extraInvoiceResults?.skippedNotImportedToXledger?.length ?? 0) + (statusInvoice?.buyOutResults?.skippedNotImportedToXledger?.length ?? 0)}`])
   } else if (statusInvoice?.errors) {
     logger('error', ['Error response from Xledger:', statusInvoice])
   } else if (!statusInvoice) {

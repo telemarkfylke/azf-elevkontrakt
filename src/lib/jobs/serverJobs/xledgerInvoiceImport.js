@@ -192,13 +192,100 @@ const createCsvString = async (csvData) => {
   return csvRows.join('\n')
 }
 
+// A Teams adaptive card is capped at ~28KB, and an end-of-year batch can hold back a lot of
+// invoices at once - so the card prints the first few and refers to the log for the rest.
+const MAX_SKIPPED_FACTS_IN_CARD = 20
+
+// After this many days a hold has stopped looking like "the import job has not caught up yet" and
+// starts looking like a hold that will never lift on its own. xledgerUserImport only sets
+// isImportedToXledger for contracts in 'kontrakter' whose kontraktType is a Leieavtale/Låneavtale,
+// and only for the recipients that made it into the automatic import file - a recipient created by
+// hand in Xledger (the manual-review list), a contract with kontraktType 'Ukjent', or one already
+// archived to pc-ikke-innlevert never gets the flag, so its invoice would otherwise be held quietly
+// forever. Escalating on the card makes that visible instead of it repeating unnoticed.
+const HELD_ESCALATION_DAYS = 14
+
+/**
+ * Builds the "left alone" section of the status card: the count, one FactSet per invoice, and an
+ * escalation line for holds old enough to need a human.
+ *
+ * Pure and exported so the escalation logic can be tested without stubbing axios.
+ *
+ * Age comes from the invoice's createdTimeStamp: an invoice with status 'Ikke Fakturert' is picked up
+ * by every run, so how long it has been pending IS how long it has been held. Invoices predating that
+ * field report an unknown age and never escalate, rather than guessing.
+ *
+ * @param {Array<Object>} skipped | Skip records from resolveRecipientImportStatus
+ * @param {Object} [options]
+ * @param {Number} [options.now] | Epoch ms, injectable for tests
+ * @returns {Array<Object>} | Adaptive card body blocks (empty array for an empty list)
+ */
+const buildHeldBackSection = (skipped, options = {}) => {
+  const { now = Date.now() } = options
+
+  const daysPending = (skip) => {
+    const created = skip.createdTimeStamp ? new Date(skip.createdTimeStamp).getTime() : NaN
+    if (!Number.isFinite(created)) return null
+    return Math.max(0, Math.floor((now - created) / (1000 * 60 * 60 * 24)))
+  }
+
+  const withAge = skipped.map(skip => ({ skip, days: daysPending(skip) }))
+  // Oldest first, unknown age last: the list is capped, so the holds that need attention have to be
+  // the ones that survive the cap.
+  const ordered = [...withAge].sort((a, b) => (b.days ?? -1) - (a.days ?? -1))
+  const escalated = ordered.filter(({ days }) => days !== null && days >= HELD_ESCALATION_DAYS)
+
+  return [
+    {
+      type: 'TextBlock',
+      text: `**${skipped.length}** faktura(er) ble **ikke** sendt til Xledger fordi mottakeren ikke er importert dit (isImportedToXledger er ikke true). De står urørt med status 'Ikke Fakturert' og forsøkes på nytt når flagget settes.`,
+      wrap: true,
+      weight: 'Bolder',
+      size: 'Medium'
+    },
+    ...(escalated.length > 0
+      ? [{
+          type: 'TextBlock',
+          text: `**Krever oppfølging:** ${escalated.length} av disse har ventet i mer enn ${HELD_ESCALATION_DAYS} dager. Flagget settes ikke automatisk for alle - mottakere som er opprettet manuelt i Xledger, kontrakter med kontraktType 'Ukjent' og kontrakter som ligger i pc-ikke-innlevert får det aldri. Sjekk om mottakeren finnes i Xledger og sett isImportedToXledger manuelt.`,
+          wrap: true,
+          weight: 'Bolder',
+          color: 'Attention'
+        }]
+      : []),
+    ...ordered.slice(0, MAX_SKIPPED_FACTS_IN_CARD).map(({ skip, days }) => ({
+      type: 'FactSet',
+      facts: [
+        { title: 'Elev:', value: skip.studentName },
+        { title: 'Mottaker:', value: `${skip.recipientName} (${skip.recipientFnr})` },
+        { title: 'Ventet:', value: days === null ? 'ukjent (fakturaen mangler createdTimeStamp)' : `${days} dag(er)` },
+        { title: 'Kontrakt ID:', value: skip.customerContractId },
+        { title: 'Faktura ID:', value: skip.invoiceId },
+        { title: 'Collection:', value: skip.documentType || 'ikke funnet' },
+        { title: 'Årsak:', value: skip.reason }
+      ]
+    })),
+    ...(ordered.length > MAX_SKIPPED_FACTS_IN_CARD
+      ? [{
+          type: 'TextBlock',
+          text: `... og ${ordered.length - MAX_SKIPPED_FACTS_IN_CARD} flere, se loggen.`,
+          wrap: true
+        }]
+      : [])
+  ]
+}
+
 /**
  *
- * @param {Object} message | { updateCount, notFoundCount, updateCountOldFile, notFoundCountOldFile }
+ * @param {Object} message | { updateCount, failedToUpdate, skippedNotImportedToXledger }
+ *   skippedNotImportedToXledger: invoices left alone because the recipient is not imported to Xledger.
+ *   Pass an array (even an empty one) to get the count printed on the card; omit it entirely to leave
+ *   the section out - normalInvoice has no such section, since its query already filters on the flag.
  * @param {string} type | The type of invoice import (buyOut, extraInvoice, normalInvoice)
  */
 const sendTeamsMessage = async (message, type) => {
-  const { updateCount, failedToUpdate = [] } = message
+  const { updateCount, failedToUpdate = [], skippedNotImportedToXledger } = message
+  const hasSkippedSection = Array.isArray(skippedNotImportedToXledger)
+  const skipped = hasSkippedSection ? skippedNotImportedToXledger : []
   const teamsMsg = {
     type: 'message',
     attachments: [
@@ -235,6 +322,10 @@ const sendTeamsMessage = async (message, type) => {
               type: 'FactSet',
               facts: failedToUpdate.length > 0 ? failedToUpdate.map(docId => ({ title: 'Dokument ID:', value: docId })) : [{ title: 'Status:', value: 'Alle dokumenter ble oppdatert uten feil.' }]
             },
+            // Held-back invoices: nothing failed here, they were deliberately not sent. Kept on this
+            // card (rather than its own) because they belong to the same run's tally - the count is
+            // printed even when it is 0, so it is visible that the check ran.
+            ...(hasSkippedSection ? buildHeldBackSection(skipped) : []),
             {
               type: 'Image',
               url: 'https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExazY1ajBqcW50dTlzYTZ2Yzdpb3Uxd3FrNGxvamJ3MW80MmZ6NDY0cCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/uiuP6Fdb8bdYElPLZU/giphy.gif',
@@ -511,7 +602,18 @@ const updateImportedBuyOutDocument = async (invoiceDocument, orderNo, rateNumber
   return { contractUpdated, invoiceUpdated: true, failure }
 }
 
-const generateInvoiceImportFile = async (importType, csvDataArray) => {
+/**
+ * @param {String} importType | buyOut, extraInvoice or normalInvoice
+ * @param {Array} csvDataArray | The CSV rows to import (built by the caller; normalInvoice builds its own)
+ * @param {Object} [options]
+ * @param {Array<Object>} [options.skippedNotImportedToXledger] | Invoices the caller left alone because
+ *   the recipient is not imported to Xledger. Reported on the Teams card; only buyOut/extraInvoice pass it.
+ */
+const generateInvoiceImportFile = async (importType, csvDataArray, options = {}) => {
+  const { skippedNotImportedToXledger = [] } = options
+  // Spread into the Teams payload so only callers that actually pass the option (buyOut/extraInvoice)
+  // get the held-back section on their card - normalInvoice gates on the flag in its query instead.
+  const skippedSection = Array.isArray(options.skippedNotImportedToXledger) ? { skippedNotImportedToXledger } : {}
   const logPrefix = 'generateInvoiceImportFile'
   logger('info', [logPrefix, 'Starting invoice import file generation job'])
 
@@ -534,8 +636,24 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
     csvDataArray = csvDataArray
   }
   if (csvDataArray.length === 0) {
-    logger('info', ['logPrefix', 'No data to create CSV file for invoice import'])
-    return { message: 'No data to create CSV file for invoice import' }
+    logger('info', [logPrefix, 'No data to create CSV file for invoice import'])
+    // "Nothing to import" is exactly what a batch where every invoice was held back looks like, and
+    // that is the case the report matters most in - so the card is still sent when there are skips.
+    if (skippedNotImportedToXledger.length > 0) {
+      logger('info', [logPrefix, `No CSV rows to import: all ${skippedNotImportedToXledger.length} ${importType} invoice(s) were left alone because the recipient is not imported to Xledger.`])
+      // Contained: this path used to have no side effects at all, so a throw here (a webhook 429, say)
+      // would surface in processInvoices' catch and fire sendImportFailureAlert - reporting an Xledger
+      // import failure for a batch that never reached Xledger. Nothing was sent and nothing was
+      // written;
+      try {
+        await sendTeamsMessage({ updateCount: 0, failedToUpdate: [], ...skippedSection }, importType)
+      } catch (error) {
+        logger('error', [logPrefix, `Could not post the Teams report for ${skippedNotImportedToXledger.length} held-back ${importType} invoice(s). They are unchanged and will be retried.`, error])
+      }
+    }
+    // Same shape as the normal return path: callers read result.csvDataArray.length, and a bare
+    // { message } made that a TypeError (runExtraInvoiceImport.js).
+    return { csvDataArray: [], updatedCount: 0, failedToUpdate: [], failedContractUpdates: [], skippedNotImportedToXledger, message: 'No data to create CSV file for invoice import' }
   }
   // We might have to create the file in batches. Adjust rowsPerBatch to control the size of each batch.
   let batches = 1
@@ -675,13 +793,13 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
   // like a clean run.
   if(importType === 'normalInvoice') {
     logger('info', [logPrefix, `Invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database.`])
-    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate }, `normalInvoice`)
+    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate, ...skippedSection }, `normalInvoice`)
   } else if (importType === 'buyOut') {
-    logger('info', [logPrefix, `BuyOut invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database.`])
-    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate }, `buyOut`)
+    logger('info', [logPrefix, `BuyOut invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database. ${skippedNotImportedToXledger.length} invoice(s) left alone (recipient not imported to Xledger).`])
+    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate, ...skippedSection }, `buyOut`)
   } else if (importType === 'extraInvoice') {
-    logger('info', [logPrefix, `Extra invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database.`])
-    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate }, `extraInvoice`)
+    logger('info', [logPrefix, `Extra invoice import completed. ${updatedCount} of ${csvDataArray.length} invoices marked as 'Fakturert' in the database. ${skippedNotImportedToXledger.length} invoice(s) left alone (recipient not imported to Xledger).`])
+    await sendTeamsMessage({ updateCount: updatedCount, failedToUpdate, ...skippedSection }, `extraInvoice`)
   }
 
   // Separate card: these invoices ARE in Xledger, only their contract mirror is behind. Folding
@@ -690,12 +808,14 @@ const generateInvoiceImportFile = async (importType, csvDataArray) => {
     await sendContractWriteBackAlert(importType, failedContractUpdates)
   }
 
-  return { csvDataArray, updatedCount, failedToUpdate, failedContractUpdates }
+  return { csvDataArray, updatedCount, failedToUpdate, failedContractUpdates, skippedNotImportedToXledger }
 }
 
 module.exports = {
   generateInvoiceImportFile,
   sendImportFailureAlert,
   sendContractWriteBackAlert,
-  updateImportedBuyOutDocument
+  updateImportedBuyOutDocument,
+  buildHeldBackSection,
+  HELD_ESCALATION_DAYS
 }

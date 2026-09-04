@@ -25,7 +25,7 @@ const makeExtraInvoice = (overrides = {}) => ({
   type: 'extraInvoice',
   skoleOrgNr: '974568098',
   student: { fnr: '12345678901', navn: 'Test Elev' },
-  recipient: { fnr: '98765432100' },
+  recipient: { fnr: '98765432100', navn: 'Test Foresatt' },
   løpenummer: 'JOT-000000001-4-2024-abc123',
   itemsFromCart: [
     { _id: 'prod-1', name: 'Mus', price: 250, description: 'Standard mus', active: true, color: 'black', size: 'medium' },
@@ -42,6 +42,12 @@ const makeSchoolInfo = (overrides = {}) => ({
   ...overrides,
 })
 
+// Contract lookup used by the isImportedToXledger gate. Defaults to an imported contract so the CSV
+// tests below exercise the happy path; without this dep every test would hit the real findContractById
+// (and the real database).
+const makeContractLookup = (contract = { isImportedToXledger: true }, documentType = 'regular') =>
+  async () => ({ contract, documentType })
+
 const makeStandardDeps = (capturedCsv) => ({
   getThisYearsPriceList: async () => ({
     prices: [{ klasse: 'VG1', price: 4000 }],
@@ -55,6 +61,7 @@ const makeStandardDeps = (capturedCsv) => ({
     if (capturedCsv) capturedCsv.push(...csvData)
     return { status: 200, type }
   },
+  findContractById: makeContractLookup(),
   logger: () => {},
 })
 
@@ -68,6 +75,7 @@ const makeExtraDeps = (capturedCsv, serialCounter = { n: 0 }) => ({
   },
   // Defensive default so a test that forgets to override this never accidentally hits the real database.
   updateDocument: async () => ({ status: 200 }),
+  findContractById: makeContractLookup(),
   logger: () => {},
 })
 
@@ -490,6 +498,195 @@ describe('handleExtraInvoice', () => {
     assert.equal(csv[0]['End Of Line'], 'X')
     assert.equal(csv[0]['ImpSystem'], 'Skoleutvikling - JOTNE')
     assert.equal(csv[0]['Owner ID/Entity Code'], '39006')
+  })
+})
+
+// =====================================================================
+// isImportedToXledger gate - invoices are left alone until the recipient exists in Xledger
+// =====================================================================
+
+describe('isImportedToXledger gate', () => {
+  // Captures the third argument (options) that the handler passes on to generateInvoiceImportFile.
+  const makeCapturingDeps = (base, csv, captured) => ({
+    ...base,
+    generateInvoiceImportFile: async (type, csvData, options) => {
+      csv.push(...csvData)
+      captured.options = options
+      return { status: 200, type }
+    },
+  })
+
+  test('extraInvoice: imported for boolean true, string "true" and "TRUE"', async () => {
+    for (const value of [true, 'true', 'TRUE']) {
+      const csv = []
+      const deps = { ...makeExtraDeps(csv), findContractById: makeContractLookup({ isImportedToXledger: value }) }
+      await handleExtraInvoice([makeExtraInvoice()], deps)
+      assert.equal(csv.length, 2, `isImportedToXledger = ${JSON.stringify(value)} should be invoiced`)
+    }
+  })
+
+  test('extraInvoice: left alone for boolean false, string "false" and a missing field', async () => {
+    for (const contract of [{ isImportedToXledger: false }, { isImportedToXledger: 'false' }, {}]) {
+      const csv = []
+      const captured = {}
+      const deps = makeCapturingDeps(
+        { ...makeExtraDeps(null), findContractById: makeContractLookup(contract) }, csv, captured
+      )
+      await handleExtraInvoice([makeExtraInvoice()], deps)
+      assert.equal(csv.length, 0, `${JSON.stringify(contract)} should not be invoiced`)
+      assert.equal(captured.options.skippedNotImportedToXledger.length, 1)
+    }
+  })
+
+  test('buyOut: imported for string "true", left alone for string "false"', async () => {
+    const importedCsv = []
+    await handleBuyOutInvoice([makeBuyOutInvoice()], {
+      ...makeStandardDeps(importedCsv),
+      findContractById: makeContractLookup({ isImportedToXledger: 'true' }),
+    })
+    assert.equal(importedCsv.length, 3)
+
+    const skippedCsv = []
+    const captured = {}
+    await handleBuyOutInvoice([makeBuyOutInvoice()], makeCapturingDeps(
+      { ...makeStandardDeps(null), findContractById: makeContractLookup({ isImportedToXledger: 'false' }) },
+      skippedCsv, captured
+    ))
+    assert.equal(skippedCsv.length, 0)
+    assert.equal(captured.options.skippedNotImportedToXledger.length, 1)
+  })
+
+  test('left alone when the contract cannot be found in any collection', async () => {
+    const csv = []
+    const captured = {}
+    const deps = makeCapturingDeps(
+      { ...makeExtraDeps(null), findContractById: async () => ({ contract: null, documentType: null }) },
+      csv, captured
+    )
+    await handleExtraInvoice([makeExtraInvoice()], deps)
+    assert.equal(csv.length, 0)
+    assert.equal(captured.options.skippedNotImportedToXledger.length, 1)
+    assert.match(captured.options.skippedNotImportedToXledger[0].reason, /Fant ingen kontrakt/)
+    assert.equal(captured.options.skippedNotImportedToXledger[0].documentType, null)
+  })
+
+  test('left alone (not thrown) when the contract lookup fails', async () => {
+    const csv = []
+    const captured = {}
+    const deps = makeCapturingDeps(
+      { ...makeExtraDeps(null), findContractById: async () => { throw new Error('MongoDB nede') } },
+      csv, captured
+    )
+    await handleExtraInvoice([makeExtraInvoice()], deps)
+    assert.equal(csv.length, 0)
+    assert.match(captured.options.skippedNotImportedToXledger[0].reason, /Oppslag av kontrakten feilet: MongoDB nede/)
+  })
+
+  test('skip record identifies the invoice and masks the recipient fnr', async () => {
+    const captured = {}
+    const invoice = makeExtraInvoice({ _id: 'inv-42', customerContractId: 'contract-42' })
+    const deps = makeCapturingDeps(
+      {
+        ...makeExtraDeps(null),
+        findContractById: makeContractLookup({ isImportedToXledger: 'false' }, 'pcIkkeInnlevert'),
+      },
+      [], captured
+    )
+    await handleExtraInvoice([invoice], deps)
+    const skip = captured.options.skippedNotImportedToXledger[0]
+    assert.equal(skip.invoiceId, 'inv-42')
+    assert.equal(skip.customerContractId, 'contract-42')
+    assert.equal(skip.studentName, 'Test Elev')
+    assert.equal(skip.recipientName, 'Test Foresatt')
+    assert.equal(skip.recipientFnr, '987654*****')
+    assert.equal(skip.documentType, 'pcIkkeInnlevert')
+    assert.match(skip.reason, /isImportedToXledger = "false"/)
+  })
+
+  test('skip record carries createdTimeStamp so the card can age the hold', () => {
+    const created = new Date('2026-08-01T09:00:00.000Z')
+    const captured = {}
+    const deps = makeCapturingDeps(
+      { ...makeExtraDeps(null), findContractById: makeContractLookup({ isImportedToXledger: false }) },
+      [], captured
+    )
+    return handleExtraInvoice([makeExtraInvoice({ createdTimeStamp: created })], deps).then(() => {
+      assert.equal(captured.options.skippedNotImportedToXledger[0].createdTimeStamp, created)
+    })
+  })
+
+  test('an invoice with no createdTimeStamp reports null rather than undefined', async () => {
+    const captured = {}
+    const deps = makeCapturingDeps(
+      { ...makeExtraDeps(null), findContractById: makeContractLookup({ isImportedToXledger: false }) },
+      [], captured
+    )
+    await handleExtraInvoice([makeExtraInvoice()], deps)
+    assert.equal(captured.options.skippedNotImportedToXledger[0].createdTimeStamp, null)
+  })
+
+  test('only the un-imported invoice is dropped, the rest of the batch still generates rows', async () => {
+    const csv = []
+    const captured = {}
+    const imported = makeExtraInvoice({ _id: 'ok', customerContractId: 'contract-ok', løpenummer: 'SN-OK' })
+    const notImported = makeExtraInvoice({ _id: 'hold', customerContractId: 'contract-hold', løpenummer: 'SN-HOLD' })
+    const deps = makeCapturingDeps(
+      {
+        ...makeExtraDeps(null),
+        findContractById: async (contractId) => ({
+          contract: { isImportedToXledger: contractId === 'contract-ok' ? true : 'false' },
+          documentType: 'regular',
+        }),
+      },
+      csv, captured
+    )
+    await handleExtraInvoice([imported, notImported], deps)
+    assert.equal(csv.length, 2, 'only the imported invoice produced rows')
+    assert.ok(csv.every(row => row.Dummy4 === 'ok'))
+    assert.equal(captured.options.skippedNotImportedToXledger.length, 1)
+    assert.equal(captured.options.skippedNotImportedToXledger[0].invoiceId, 'hold')
+  })
+
+  test('a held-back extraInvoice does not get a løpenummer minted while it waits', async () => {
+    let generateCalls = 0
+    let updateCalls = 0
+    const invoice = makeExtraInvoice({ løpenummer: undefined })
+    const deps = {
+      ...makeExtraDeps([]),
+      findContractById: makeContractLookup({ isImportedToXledger: 'false' }),
+      generateSerialNumber: async () => { generateCalls++; return 'SHOULD-NOT-BE-USED' },
+      updateDocument: async () => { updateCalls++; return { status: 200 } },
+    }
+    await handleExtraInvoice([invoice], deps)
+    assert.equal(generateCalls, 0)
+    assert.equal(updateCalls, 0)
+  })
+
+  test('an empty skip list is still passed on, so the Teams card can report 0', async () => {
+    const captured = {}
+    await handleExtraInvoice([makeExtraInvoice()], makeCapturingDeps({ ...makeExtraDeps(null) }, [], captured))
+    assert.deepEqual(captured.options, { skippedNotImportedToXledger: [] })
+
+    const buyOutCaptured = {}
+    await handleBuyOutInvoice([makeBuyOutInvoice()], makeCapturingDeps({ ...makeStandardDeps(null) }, [], buyOutCaptured))
+    assert.deepEqual(buyOutCaptured.options, { skippedNotImportedToXledger: [] })
+  })
+
+  test('an invoice-flow exception still takes precedence over the import gate', async () => {
+    const csv = []
+    const captured = {}
+    const deps = makeCapturingDeps(
+      {
+        ...makeStandardDeps(null),
+        hasInvoiceFlowException: () => true,
+        // Would also have been held back by the gate - the exception must win, so it is not double-counted.
+        findContractById: makeContractLookup({ isImportedToXledger: 'false' }),
+      },
+      csv, captured
+    )
+    await handleBuyOutInvoice([makeBuyOutInvoice()], deps)
+    assert.equal(csv.length, 0)
+    assert.equal(captured.options.skippedNotImportedToXledger.length, 0)
   })
 })
 
