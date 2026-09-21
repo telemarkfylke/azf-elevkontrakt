@@ -101,6 +101,8 @@ const buildInvoiceLineText = (invoice, rateIndex) => {
 
 const handleBuyOutInvoice = async (invoices, deps = {}) => {
     const {
+        // Explicit argument rather than config, so the environment cannot flip it by accident.
+        dryRun = false,
         getThisYearsPriceList: _getThisYearsPriceList = getThisYearsPriceList,
         hasInvoiceFlowException: _hasInvoiceFlowException = hasInvoiceFlowException,
         schoolInfoList: _schoolInfoList = schoolInfoList,
@@ -165,7 +167,7 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
             csvDataArray.push(csvData)
         }
     }
-   return await _generateInvoiceImportFile('buyOut', csvDataArray, { skippedNotImportedToXledger })
+   return await _generateInvoiceImportFile('buyOut', csvDataArray, { skippedNotImportedToXledger, dryRun })
 }
 /**
  * 
@@ -173,6 +175,7 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
  */
 const handleExtraInvoice = async (invoices, deps = {}) => {
     const {
+        dryRun = false,
         schoolInfoList: _schoolInfoList = schoolInfoList,
         generateSerialNumber: _generateSerialNumber = generateSerialNumber,
         standardFields: _standardFields = standardFields,
@@ -245,7 +248,7 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
             csvDataArray.push(csvData)
         }
     }
-   return await _generateInvoiceImportFile('extraInvoice', csvDataArray, { skippedNotImportedToXledger })
+   return await _generateInvoiceImportFile('extraInvoice', csvDataArray, { skippedNotImportedToXledger, dryRun })
 }
 
 /**
@@ -254,6 +257,9 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
  */
 const processInvoices = async (deps = {}) => {
     const {
+        // { dryRun: true } builds the CSVs without sending or marking anything 'Fakturert'.
+        // Default false, so the scheduled job and runExtraInvoiceImport are unaffected.
+        dryRun = false,
         getDocuments: _getDocuments = getDocuments,
         handleBuyOutInvoice: _handleBuyOutInvoice = handleBuyOutInvoice,
         handleExtraInvoice: _handleExtraInvoice = handleExtraInvoice,
@@ -290,7 +296,7 @@ const processInvoices = async (deps = {}) => {
     if(buyOutInvoices.length > 0) {
         _logger('info', [logPrefix, `Processing ${buyOutInvoices.length} buyOut invoices`])
         try {
-            buyOutResults = await _handleBuyOutInvoice(buyOutInvoices)
+            buyOutResults = await _handleBuyOutInvoice(buyOutInvoices, { dryRun })
         } catch (error) {
             // Without this, an Xledger import failure aborts status write-back for the whole batch with nobody aware -
             // the same invoices get resent on the next scheduled run. Catch it here so extraInvoice can still be attempted below.
@@ -302,7 +308,7 @@ const processInvoices = async (deps = {}) => {
     if(extraInvoices.length > 0) {
         _logger('info', [logPrefix, `Processing ${extraInvoices.length} extra invoices`])
         try {
-            extraInvoiceResults = await _handleExtraInvoice(extraInvoices)
+            extraInvoiceResults = await _handleExtraInvoice(extraInvoices, { dryRun })
         } catch (error) {
             _logger('error', [logPrefix, 'Error processing extra invoices', error])
             await _sendImportFailureAlert('extraInvoice', error)

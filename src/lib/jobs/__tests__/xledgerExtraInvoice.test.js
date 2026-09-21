@@ -663,13 +663,16 @@ describe('isImportedToXledger gate', () => {
   })
 
   test('an empty skip list is still passed on, so the Teams card can report 0', async () => {
+    // dryRun rides along in the same options object and defaults to false, so a normal run is
+    // unaffected - asserted explicitly here because this is the flag that decides whether real
+    // invoices get sent.
     const captured = {}
     await handleExtraInvoice([makeExtraInvoice()], makeCapturingDeps({ ...makeExtraDeps(null) }, [], captured))
-    assert.deepEqual(captured.options, { skippedNotImportedToXledger: [] })
+    assert.deepEqual(captured.options, { skippedNotImportedToXledger: [], dryRun: false })
 
     const buyOutCaptured = {}
     await handleBuyOutInvoice([makeBuyOutInvoice()], makeCapturingDeps({ ...makeStandardDeps(null) }, [], buyOutCaptured))
-    assert.deepEqual(buyOutCaptured.options, { skippedNotImportedToXledger: [] })
+    assert.deepEqual(buyOutCaptured.options, { skippedNotImportedToXledger: [], dryRun: false })
   })
 
   test('an invoice-flow exception still takes precedence over the import gate', async () => {
@@ -792,5 +795,62 @@ describe('buildInvoiceLineText', () => {
       buildInvoiceLineText(invoice({ invoiceLineLabel: 'Leie av elev-PC', rates: [{ løpenummer: 'a' }] }), 0),
       'Faktura for Ola Nordmann - Leie av elev-PC'
     )
+  })
+})
+
+describe('dryRun — the flag standing between a dev-testing call and a real invoice', () => {
+  const { processInvoices } = require('../serverJobs/xledgerExtraInvoice.js')
+
+  /** Records what each layer was asked to do, without doing any of it. */
+  const makeSpy = () => {
+    const seen = { generateOptions: [], handlerOptions: [] }
+    return { seen }
+  }
+
+  test('processInvoices forwards dryRun down to BOTH handlers', async () => {
+    const { seen } = makeSpy()
+    await processInvoices({
+      dryRun: true,
+      getDocuments: async () => ({
+        status: 200,
+        result: [{ _id: 'a', type: 'buyOut' }, { _id: 'b', type: 'extraInvoice' }]
+      }),
+      handleBuyOutInvoice: async (invoices, opts) => { seen.handlerOptions.push(['buyOut', opts]); return {} },
+      handleExtraInvoice: async (invoices, opts) => { seen.handlerOptions.push(['extraInvoice', opts]); return {} },
+      logger: () => {}
+    })
+
+    assert.deepEqual(seen.handlerOptions, [
+      ['buyOut', { dryRun: true }],
+      ['extraInvoice', { dryRun: true }]
+    ])
+  })
+
+  test('defaults to false, so the scheduled job and runExtraInvoiceImport are unaffected', async () => {
+    const { seen } = makeSpy()
+    await processInvoices({
+      getDocuments: async () => ({ status: 200, result: [{ _id: 'a', type: 'buyOut' }] }),
+      handleBuyOutInvoice: async (invoices, opts) => { seen.handlerOptions.push(opts); return {} },
+      handleExtraInvoice: async () => ({}),
+      logger: () => {}
+    })
+
+    assert.deepEqual(seen.handlerOptions, [{ dryRun: false }])
+  })
+
+  test('the handlers pass dryRun on to the file generator, where the side effects live', async () => {
+    const captured = {}
+    await handleExtraInvoice(
+      [makeExtraInvoice()],
+      { ...makeExtraDeps(null), dryRun: true, generateInvoiceImportFile: async (type, csv, options) => { captured.options = options; return {} } }
+    )
+    assert.equal(captured.options.dryRun, true)
+
+    const buyOutCaptured = {}
+    await handleBuyOutInvoice(
+      [makeBuyOutInvoice()],
+      { ...makeStandardDeps(null), dryRun: true, generateInvoiceImportFile: async (type, csv, options) => { buyOutCaptured.options = options; return {} } }
+    )
+    assert.equal(buyOutCaptured.options.dryRun, true)
   })
 })
