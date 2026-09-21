@@ -2,7 +2,8 @@ const { logger } = require('@vtfk/logger')
 const { email } = require('../../../config.js')
 const { default: axios } = require('axios')
 const { sanitizeErrorForLogging } = require('../helpers/maskFnr')
-require('dotenv').config()
+// No dotenv here: a library module loading env ran inside the Functions host too, where Core Tools
+// has already injected local.settings.json. Entry points own that - `func start`, or the runners.
 
 /**
  *
