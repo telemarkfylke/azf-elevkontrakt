@@ -30,6 +30,18 @@ const { generateSerialNumber } = require("../helpers/getSerialNumber")
  *   contract out of this very collection.
  * @param {Object} invoiceCreatedBy - { name, givenName, surname, email, companyName, officeLocation, jobTitle }
  * @param {Object} [deps]
+ * @param {String} [deps.rateStatusOnInvoice] - the status written to the contract's rate, defaulting to
+ *   'Fakturert - Utkjøp'. A buyout is the only thing this function was originally used for, but the
+ *   same rails carry a plain one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime'), and that
+ *   is not a buyout - its rate must read 'Fakturert'. The value is stored on the invoice document too,
+ *   because the Xledger import writes the rate a second time on the way back
+ *   (updateImportedBuyOutDocument, xledgerInvoiceImport.js) and would otherwise overwrite it with the
+ *   buyout status. Invoices written before this field existed have no value and keep the old status.
+ * @param {String} [deps.invoiceLineLabel] - overrides the description printed on the invoice LINE the
+ *   recipient actually reads (handleBuyOutInvoice, xledgerExtraInvoice.js). Same reason as
+ *   rateStatusOnInvoice: a one-off termin invoice on these rails must not tell a guardian their PC was
+ *   bought out. Omitted for a real buyout, which keeps the existing 'Utkjøp av elev-PC - Faktura n/m'
+ *   wording byte for byte.
  * @returns {Promise<{status: number, body: string}>}
  */
 const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCollectionSource, invoiceCreatedBy, deps = {}) => {
@@ -38,6 +50,8 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
         postExtraInvoice: _postExtraInvoice = postExtraInvoice,
         generateSerialNumber: _generateSerialNumber = generateSerialNumber,
         logger: _logger = logger,
+        rateStatusOnInvoice = 'Fakturert - Utkjøp',
+        invoiceLineLabel,
     } = deps
 
     const logPrefix = 'createBuyOutInvoice - processInvoices'
@@ -56,7 +70,7 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
                 const rateNumber = i + 1
                 const serialNumber = await _generateSerialNumber(rateNumber)
                 const updateRate = {}
-                updateRate[`fakturaInfo.${rateNumberFull}.status`] = 'Fakturert - Utkjøp'
+                updateRate[`fakturaInfo.${rateNumberFull}.status`] = rateStatusOnInvoice
                 updateRate[`fakturaInfo.${rateNumberFull}.løpenummer`] = serialNumber
                 updateRate[`fakturaInfo.${rateNumberFull}.sum`] = buyOutItem.sum
                 const updateResult = await _updateDocument(customerContract._id, updateRate, mainDocumentCollectionSource)
@@ -109,6 +123,12 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
         },
         skoleOrgNr: customerContract.skoleOrgNr,
         status: 'Ikke Fakturert',
+        // Read back by updateImportedBuyOutDocument so the Xledger import re-applies the status this
+        // invoice was created with, rather than assuming every invoice on these rails is a buyout.
+        rateStatusOnInvoice,
+        // Only set when the caller wants line text other than the buyout wording, so a real buyout's
+        // invoice document is unchanged from before this option existed.
+        ...(invoiceLineLabel ? { invoiceLineLabel } : {}),
         itemsFromCart: buyOutItems,
         rates: ratesToInvoice,
         invoiceCreatedBy,

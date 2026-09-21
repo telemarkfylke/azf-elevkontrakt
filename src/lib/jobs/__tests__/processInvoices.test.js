@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { generateInvoices } = require('../processInvoices.js')
+const { generateInvoices, createBuyOutInvoice } = require('../processInvoices.js')
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -146,5 +146,52 @@ describe('generateInvoices - buyOut (regression)', () => {
 
     assert.equal(result.status, 404)
     assert.equal(posted.length, 0)
+  })
+})
+
+// =====================================================================
+// createBuyOutInvoice - rateStatusOnInvoice
+//
+// These rails carry two different things now: a buyout, whose rate must read 'Fakturert - Utkjøp',
+// and a plain one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime'), whose rate must read
+// 'Fakturert'. The status is stored on the invoice because the Xledger import writes the rate a
+// second time on the way back and would otherwise relabel it.
+// =====================================================================
+
+describe('createBuyOutInvoice - rateStatusOnInvoice', () => {
+  test("defaults to 'Fakturert - Utkjøp' so every existing caller is unchanged", async () => {
+    const posted = []
+    const updates = []
+    const deps = makeDeps({ postedInvoices: posted, updates })
+
+    const result = await createBuyOutInvoice(makeContract(), [{ faktureringsår: 2024, sum: 4000 }], 'regular', {}, deps)
+
+    assert.equal(result.status, 200)
+    assert.equal(updates[0].data['fakturaInfo.rate1.status'], 'Fakturert - Utkjøp')
+    assert.equal(posted[0].rateStatusOnInvoice, 'Fakturert - Utkjøp')
+  })
+
+  test("'Fakturert' is written to the rate AND stored on the invoice for the import to read back", async () => {
+    const posted = []
+    const updates = []
+    const deps = { ...makeDeps({ postedInvoices: posted, updates }), rateStatusOnInvoice: 'Fakturert' }
+
+    const result = await createBuyOutInvoice(makeContract(), [{ faktureringsår: 2025, sum: 1500 }], 'regular', {}, deps)
+
+    assert.equal(result.status, 200)
+    assert.equal(updates[0].data['fakturaInfo.rate2.status'], 'Fakturert', 'the contract rate must not say utkjøp')
+    assert.equal(posted[0].rateStatusOnInvoice, 'Fakturert', 'without this the Xledger import relabels it on the way back')
+  })
+
+  test('the status does not change anything else about the invoice', async () => {
+    const posted = []
+    const deps = { ...makeDeps({ postedInvoices: posted }), rateStatusOnInvoice: 'Fakturert' }
+
+    await createBuyOutInvoice(makeContract(), [{ faktureringsår: 2024, sum: 4000 }], 'pcIkkeInnlevert', { email: 'a@b.no' }, deps)
+
+    assert.equal(posted[0].type, 'buyOut')
+    assert.equal(posted[0].status, 'Ikke Fakturert')
+    assert.equal(posted[0].mainDocumentCollectionSource, 'pcIkkeInnlevert')
+    assert.equal(posted[0].rates.length, 1)
   })
 })

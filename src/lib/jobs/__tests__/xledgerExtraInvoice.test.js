@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { handleBuyOutInvoice, handleExtraInvoice, processInvoices } = require('../serverJobs/xledgerExtraInvoice.js')
+const { handleBuyOutInvoice, handleExtraInvoice, processInvoices, buildInvoiceLineText } = require('../serverJobs/xledgerExtraInvoice.js')
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -753,5 +753,44 @@ describe('processInvoices', () => {
     assert.equal(alerts.length, 2)
     assert.ok(alerts.some(a => a.type === 'buyOut' && a.error === 'boom-buyout'))
     assert.ok(alerts.some(a => a.type === 'extraInvoice' && a.error === 'boom-extra'))
+  })
+})
+
+// =====================================================================================
+// buildInvoiceLineText
+//
+// 'Tekst (imp)' is the sentence printed on the invoice line the recipient actually pays against, so
+// it matters more than the internal rate status, not less. These rails now carry both a real buyout
+// and a one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime'), and telling a guardian
+// their PC was "kjøpt ut" when it was not would be wrong on the document itself.
+// =====================================================================================
+
+describe('buildInvoiceLineText', () => {
+  const invoice = (overrides = {}) => ({
+    student: { navn: 'Ola Nordmann' },
+    rates: [{ løpenummer: 'a' }, { løpenummer: 'b' }],
+    ...overrides
+  })
+
+  test('a buyout keeps its existing wording, counter and all - byte for byte as before', () => {
+    assert.equal(buildInvoiceLineText(invoice(), 0), 'Faktura for Ola Nordmann - Utkjøp av elev-PC - Faktura 1/2')
+    assert.equal(buildInvoiceLineText(invoice(), 1), 'Faktura for Ola Nordmann - Utkjøp av elev-PC - Faktura 2/2')
+  })
+
+  test('a single-rate buyout is unchanged too', () => {
+    assert.equal(buildInvoiceLineText(invoice({ rates: [{ løpenummer: 'a' }] }), 0), 'Faktura for Ola Nordmann - Utkjøp av elev-PC - Faktura 1/1')
+  })
+
+  test("a stored label replaces the buyout wording entirely - no 'Utkjøp' anywhere", () => {
+    const text = buildInvoiceLineText(invoice({ invoiceLineLabel: 'Leie av elev-PC', rates: [{ løpenummer: 'a' }] }), 0)
+    assert.equal(text, 'Faktura for Ola Nordmann - Leie av elev-PC')
+    assert.doesNotMatch(text, /Utkjøp/, 'a termin invoice must never say the PC was bought out')
+  })
+
+  test('the labelled wording matches what the nightly rent invoice prints (xledgerInvoiceImport.js)', () => {
+    assert.equal(
+      buildInvoiceLineText(invoice({ invoiceLineLabel: 'Leie av elev-PC', rates: [{ løpenummer: 'a' }] }), 0),
+      'Faktura for Ola Nordmann - Leie av elev-PC'
+    )
   })
 })

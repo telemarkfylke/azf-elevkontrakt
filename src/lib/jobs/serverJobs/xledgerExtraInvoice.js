@@ -83,6 +83,22 @@ const resolveRecipientImportStatus = async (invoice, deps = {}) => {
  */
 
 
+/**
+ * The description printed on the invoice line the recipient reads.
+ *
+ * These rails carry two different things. A buyout keeps its original wording exactly, counter and
+ * all. A one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime') stores its own label and
+ * reads like the nightly rent invoice does in xledgerInvoiceImport.js - telling a guardian their PC
+ * was "kjøpt ut" when it was not would be wrong on the document they actually pay against.
+ * @param {Object} invoice
+ * @param {Number} rateIndex - 0-based index of the rate within invoice.rates
+ */
+const buildInvoiceLineText = (invoice, rateIndex) => {
+    const studentName = invoice.student?.navn
+    if (invoice.invoiceLineLabel) return `Faktura for ${studentName} - ${invoice.invoiceLineLabel}`
+    return `Faktura for ${studentName} - Utkjøp av elev-PC - Faktura ${rateIndex + 1}/${invoice.rates.length}`
+}
+
 const handleBuyOutInvoice = async (invoices, deps = {}) => {
     const {
         getThisYearsPriceList: _getThisYearsPriceList = getThisYearsPriceList,
@@ -134,7 +150,7 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
                 // 'Date': new Date().toLocaleDateString('no-NO'), // Xledger will set the date automatically to the date of import
                 'Ready To Invoice': '1', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 2 means ready to be invoiced without review)
                 Product: '4651000', // Product code for "ElevPC",
-                'Tekst (imp)': `Faktura for ${invoice.student.navn} - Utkjøp av elev-PC - Faktura ${i+1}/${invoice.rates.length}`, // Description text for the invoice line
+                'Tekst (imp)': buildInvoiceLineText(invoice, i), // Description text for the invoice line
                 Quantity: '1',
                 'Unit Price': _returnCorrectPriceForStudent(invoice.student.fnr, invoice.student.klasse, prices, exceptionsFromRegularPrices), // Price based on settings and exceptions
                 'Company No': invoice.recipient.fnr, // Person that will be invoiced
@@ -304,6 +320,7 @@ module.exports = {
     handleBuyOutInvoice,
     handleExtraInvoice,
     resolveRecipientImportStatus,
+    buildInvoiceLineText,
 }
 
 

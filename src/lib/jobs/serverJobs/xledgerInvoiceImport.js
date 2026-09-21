@@ -540,10 +540,14 @@ const updateImportedBuyOutDocument = async (invoiceDocument, orderNo, rateNumber
   }
   const rateIndex = invoiceDocument.rates.indexOf(rateToUpdate) + 1
 
-  // Update the main contract — use 'Fakturert - Utkjøp' to preserve the buyOut-specific status
+  // Update the main contract — re-apply the status the invoice was created with, which for a buyOut
+  // is 'Fakturert - Utkjøp'. createBuyOutInvoice stores it on the invoice because these rails also
+  // carry a plain one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime') whose rate must
+  // read 'Fakturert' — hardcoding the buyout status here would silently relabel it on import.
+  // Invoices created before the field existed have no value and keep the old status.
   const buyOutContractUpdateData = {
     ...updateData,
-    [`fakturaInfo.rate${rateNumber}.status`]: 'Fakturert - Utkjøp'
+    [`fakturaInfo.rate${rateNumber}.status`]: invoiceDocument.rateStatusOnInvoice || 'Fakturert - Utkjøp'
   }
 
   let failure = null
