@@ -1,7 +1,7 @@
 const { app } = require('@azure/functions')
 const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument, VALID_MOVE_TARGET_COLLECTIONS, VALID_MOVE_SOURCE_COLLECTIONS } = require('../lib/jobs/queryMongoDB')
 const { validateRoles } = require('../lib/auth/validateRoles')
-const { archiveDocument } = require('../lib/jobs/queryArchive')
+const { archiveDocument, ArchiveLookupError } = require('../lib/jobs/queryArchive')
 const { getUnsettledInvoices, describeInvoice } = require('../lib/jobs/invoiceChecks')
 const { logger } = require('@vtfk/logger')
 const { ObjectId } = require('mongodb')
@@ -91,7 +91,27 @@ app.http('handleDbRequest', {
                  */
               } catch (error) {
                 logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
-                throw new Error('Internal server error', error)
+                /**
+                 * Three failures, three different people to act. Collapsing them into one 500 is how
+                 * an archive outage tells an admin their valid fnr is wrong.
+                 *
+                 *   404 unknown everywhere      -> the admin checks the number
+                 *   409 elevmappe no saksnummer -> an ARCHIVE ADMINISTRATOR must act in P360
+                 *   502 archive unreachable     -> retry
+                 *
+                 * No contract is created in any of them.
+                 */
+                if (error instanceof ArchiveLookupError) {
+                  const statusByReason = { 'not-found': 404, 'no-case-number': 409, 'unknown-school': 400 }
+                  return {
+                    status: statusByReason[error.reason] || 400,
+                    jsonBody: { error: error.message, reason: error.reason }
+                  }
+                }
+                return {
+                  status: 502,
+                  jsonBody: { error: 'Arkivet kunne ikke nås. Prøv igjen.', reason: 'archive-unavailable' }
+                }
               }
               // Create a new document with the provided data that can be used to update the database
               logger('info', [logPrefix, 'Oppretter et manuelt kontraktsdokument som kan postes til databasen'])
