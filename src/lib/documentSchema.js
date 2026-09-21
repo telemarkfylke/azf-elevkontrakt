@@ -1,3 +1,25 @@
+const { IDENTIFIER_DEFAULTS } = require('./helpers/identifier.js')
+
+/**
+ * Stamps `ansvarligInfo.type` and `elevInfo.fnrType` onto a finished document.
+ *
+ * Applied by all three builders rather than copied into each - three hand-maintained literals is the
+ * drift that left isImportedToXledger a string in one place and a boolean in another. Only
+ * fillManualDocument sets non-default values; Acos and Digitroll are always person/ordinær.
+ *
+ * @param {Object} document
+ * @returns {Object} - the same document, with the identifier fields guaranteed present
+ */
+const withIdentifierDefaults = (document) => {
+  if (document?.ansvarligInfo) {
+    document.ansvarligInfo.type = document.ansvarligInfo.type || IDENTIFIER_DEFAULTS.ansvarligType
+  }
+  if (document?.elevInfo) {
+    document.elevInfo.fnrType = document.elevInfo.fnrType || IDENTIFIER_DEFAULTS.elevFnrType
+  }
+  return document
+}
+
 /**
  *
  * @param {Number} rate - The rate for which to calculate the billing year.
@@ -159,10 +181,16 @@ const fillDocument = (formInfo, elevData, ansvarligData, error) => {
       fnr: formInfo.parseXml.result.ArchiveData?.FnrForesatt || 'Ukjent'
     }
   }
-  return document
+  // Acos is the public signing form - always a real person, never an organisation or a fiktiv fnr.
+  return withIdentifierDefaults(document)
 }
 
 const fillManualDocument = (documentData, archiveData, elevData, ansvarligData, error) => {
+  // The only builder that can produce a non-default identifier shape - the admin UI is the sole
+  // route an organisation or fiktivt fnr enters by.
+  const isOrgAnsvarlig = documentData?.ansvarligType === 'organisasjon'
+  const isFiktivElev = documentData?.elevFnrType === 'fiktiv'
+
   const document = {
     uuid: crypto.randomUUID(),
     generatedTimeStamp: new Date().toISOString(),
@@ -189,10 +217,17 @@ const fillManualDocument = (documentData, archiveData, elevData, ansvarligData, 
       archiveDocumentNumber: archiveData?.DocumentNumber || 'Ukjent',
       createdTimeStamp: new Date().toISOString()
     },
-    signedBy: {
-      navn: ansvarligData?.fulltnavn || 'Ukjent',
-      fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent'
-    },
+    // The signatory IS the organisation; we store no employee's personal identifier, since nothing
+    // downstream uses one.
+    signedBy: isOrgAnsvarlig
+      ? {
+          navn: documentData?.ansvarligNavn || 'Ukjent',
+          fnr: documentData?.foresattFnr || 'Ukjent'
+        }
+      : {
+          navn: ansvarligData?.fulltnavn || 'Ukjent',
+          fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent'
+        },
     xLedgerImportInfo: {
       importStatus: 'false',
       importDate: 'Ukjent'
@@ -242,10 +277,12 @@ const fillManualDocument = (documentData, archiveData, elevData, ansvarligData, 
       etternavn: elevData?.etternavn || 'Ukjent',
       upn: elevData?.upn || 'Ukjent',
       fnr: documentData?.fnr || 'Ukjent',
-      elevnr: elevData?.elevnummer || 'Ukjent'
+      elevnr: elevData?.elevnummer || 'Ukjent',
+      fnrType: isFiktivElev ? 'fiktiv' : IDENTIFIER_DEFAULTS.elevFnrType
     }
     if (elevData?.elevforhold === undefined) {
-      document.elevInfo.skole = 'Ukjent'
+      // No FINT elevforhold, so the admin-picked school arrives on documentData instead.
+      document.elevInfo.skole = documentData?.schoolName || 'Ukjent'
       document.elevInfo.klasse = 'Ukjent'
       document.elevInfo.trinn = 'Ukjent'
     } else {
@@ -254,13 +291,22 @@ const fillManualDocument = (documentData, archiveData, elevData, ansvarligData, 
       document.elevInfo.trinn = elevData?.elevforhold[0]?.basisgruppemedlemskap[0]?.trinn || 'Ukjent'
     }
   }
-  if (ansvarligData !== undefined) {
+  if (isOrgAnsvarlig) {
+    // The orgnr goes in .fnr deliberately - that is the slot every Xledger CompanyNo builder reads,
+    // so an org needs no CSV changes. .type is what guards the FREG/KRR lookups.
+    document.ansvarligInfo = {
+      navn: documentData?.ansvarligNavn || 'Ukjent',
+      fnr: documentData?.foresattFnr || 'Ukjent',
+      type: 'organisasjon',
+      epost: documentData?.ansvarligEpost || 'Ukjent'
+    }
+  } else if (ansvarligData !== undefined) {
     document.ansvarligInfo = {
       navn: ansvarligData?.fulltnavn || 'Ukjent',
       fnr: ansvarligData?.foedselsEllerDNummer || 'Ukjent'
     }
   }
-  return document
+  return withIdentifierDefaults(document)
 }
 
 const digitrollImportDocument = (documentData, ansvarligData) => {
@@ -437,11 +483,13 @@ const digitrollImportDocument = (documentData, ansvarligData) => {
       fnr: documentData?.foresatt || 'Ukjent'
     }
   }
-  return document
+  // Historic Digitroll import - persons only, so always the defaults.
+  return withIdentifierDefaults(document)
 }
 module.exports = {
   getBillingYear,
   buildFreshFakturaInfo,
+  withIdentifierDefaults,
   fillDocument,
   fillManualDocument,
   digitrollImportDocument

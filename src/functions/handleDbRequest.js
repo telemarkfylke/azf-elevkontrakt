@@ -122,6 +122,11 @@ app.http('handleDbRequest', {
                 logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
               }
+              // postManualContract sets its own status when it refuses (e.g. fiktiv elev, no
+              // ansvarlig). Pass it through rather than reporting 200.
+              if (manualContract?.status && manualContract.status >= 400) {
+                return { status: manualContract.status, jsonBody: { error: manualContract.error, reason: 'invalid-contract' } }
+              }
               return { status: 200, jsonBody: manualContract }
             } else {
               // Handle non manual contracts posting to the database
