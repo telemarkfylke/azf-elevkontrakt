@@ -18,6 +18,7 @@ const RateStatus = Object.freeze({
   inkasso: 'Overført inkasso',
   ukjent: 'Ukjent',
   fakturert: 'Fakturert',
+  fakturertUtkjop: 'Fakturert - Utkjøp',
   ikkeBetale: 'Skal ikke betale',
   kreditert: 'Kreditert'
 })
@@ -84,6 +85,15 @@ async function fecthContractCandidatesFromMongoDB (collection, type) {
 }
 
 /**
+ * Whether a contract rate is worth asking Xledger about.
+ *
+ * 'Fakturert - Utkjøp' belongs here alongside 'Fakturert'. It is the status a buyout writes to the
+ * contract (createBuyOutInvoice / updateImportedBuyOutDocument), and until it was added, no consumer
+ * read it at all: the buyout payment sweep updates only the invoice document, never the contract's
+ * fakturaInfo, so a bought-out rate could never reach 'Betalt' however fully the guardian had paid.
+ * The contract then failed determineHistoryMoveTarget forever and parked in
+ * historiske-avtaler-pc-ikke-innlevert for good, with its own fakturaInfo understating what had been
+ * paid. This closes that loop; the invoice-level sweep still keeps the invoice document in step.
  *
  * @param {Object} rate
  * @returns {boolean}
@@ -92,7 +102,8 @@ function checkRateCandidacy (rate) {
   // Ingen løpenummer betyr at vi ikke har fakturert ennå, så vi kan returnere med det samme.
   if (!rate.løpenummer) { return false }
 
-  if (rate.løpenummer.substring(0, 4) === 'JOT-' && (rate.status === RateStatus.fakturert || rate.status === RateStatus.ukjent || rate.status === RateStatus.inkasso)) { return true }
+  const candidateStatuses = [RateStatus.fakturert, RateStatus.fakturertUtkjop, RateStatus.ukjent, RateStatus.inkasso]
+  if (rate.løpenummer.substring(0, 4) === 'JOT-' && candidateStatuses.includes(rate.status)) { return true }
 
   return false
 }
@@ -281,5 +292,9 @@ const updatePaymentStatus = async (collection, type) => {
 }
 
 module.exports = {
-  updatePaymentStatus
+  updatePaymentStatus,
+  // Exported for tests: the candidacy rule decides whether a rate is ever asked about, so a silent
+  // change to it strands contracts rather than failing loudly.
+  checkRateCandidacy,
+  RateStatus
 }
