@@ -756,6 +756,38 @@ describe('bulkInvoiceFromFile - an unusable price list', () => {
     assert.equal(calls.invoices.length, 0)
   })
 
+  test('a price that is not a number is refused BEFORE anything is billed', async () => {
+    // Prices are strings in settings. One that Number() cannot parse yields NaN on every rate and
+    // propagates into totals.sum, so the run reports a NaN total having billed real money.
+    for (const regularPrice of ['3 500', '3.500,-', 'gratis', '']) {
+      const priceList = { prices: { regularPrice }, exceptionsFromRegularPrices: { students: [], classes: [] } }
+      const { calls, deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] }, priceList })
+      const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: false })
+
+      assert.equal(report.fatal?.reason, 'price-list-unavailable', `'${regularPrice}' should be refused`)
+      assert.equal(calls.invoices.length, 0, `'${regularPrice}' must not bill anything`)
+    }
+  })
+
+  test('a numeric STRING price is still fine - that is the normal shape in settings', async () => {
+    const priceList = { prices: { regularPrice: '1500' }, exceptionsFromRegularPrices: { students: [], classes: [] } }
+    const { calls, deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] }, priceList })
+    const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: false })
+
+    assert.equal(report.fatal, null)
+    assert.equal(calls.invoices.length, 1)
+    assert.equal(Number.isFinite(report.totals.sum), true, 'the total must never come back NaN')
+  })
+
+  test('an unparseable reducedPrice is caught too, even though most students never hit it', async () => {
+    const priceList = { prices: { regularPrice: '1500', reducedPrice: 'halv pris' }, exceptionsFromRegularPrices: { students: [], classes: [] } }
+    const { calls, deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] }, priceList })
+    const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: false })
+
+    assert.equal(report.fatal?.reason, 'price-list-unavailable')
+    assert.equal(calls.invoices.length, 0)
+  })
+
   test('a missing exceptionsFromInvoiceFlow is tolerated - it only ever narrows who gets billed', async () => {
     const priceList = { prices: { regularPrice: 1500 }, exceptionsFromRegularPrices: { students: [], classes: [] } }
     const { calls, deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] }, priceList })

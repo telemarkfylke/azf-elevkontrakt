@@ -215,6 +215,22 @@ const findContractDefect = (contract) => {
   return null
 }
 
+/**
+ * Whether a settings price can actually be turned into an amount.
+ *
+ * Number() is too permissive on its own: `Number('')` and `Number(' ')` are 0, not NaN, so a blank
+ * price would sail through and bill everyone 0 kroner rather than failing. Anything empty is a
+ * missing price, not a free PC.
+ *
+ * @param {String|Number} value
+ * @returns {Boolean}
+ */
+const isPriceable = (value) => {
+  if (value === null || value === undefined) return false
+  if (typeof value === 'string' && value.trim() === '') return false
+  return Number.isFinite(Number(value))
+}
+
 const isLeieavtale = (contract) =>
   contract?.unSignedskjemaInfo?.kontraktType?.toLowerCase() === 'leieavtale'
 
@@ -437,6 +453,24 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
   const { prices, exceptionsFromRegularPrices, exceptionsFromInvoiceFlow } = priceList ?? {}
   if (!prices || !Array.isArray(exceptionsFromRegularPrices?.students) || !Array.isArray(exceptionsFromRegularPrices?.classes)) {
     return { ...report, fatal: { reason: 'price-list-unavailable', message: 'Prislisten i settings mangler eller har feil form - kan ikke prise noen rater' } }
+  }
+  /**
+   * Prisene er strenger i settings. En som ikke er et tall ('3 500', '3.500,-') gir NaN på hver
+   * rate, og NaN forplanter seg gjennom report.totals.sum til hele summen - stille, siden hver
+   * enkelt faktura fortsatt "ser riktig ut".
+   *
+   * Sjekkes her sammen med resten av prislisten, slik at det stopper FØR noe er fakturert i stedet
+   * for å bli oppdaget på totalen etterpå.
+   */
+  const unpriceable = ['regularPrice', 'reducedPrice'].filter(key => prices[key] !== undefined && !isPriceable(prices[key]))
+  if (!isPriceable(prices.regularPrice) || unpriceable.length > 0) {
+    return {
+      ...report,
+      fatal: {
+        reason: 'price-list-unavailable',
+        message: `Prislisten i settings har en pris som ikke er et tall (${unpriceable.join(', ') || 'regularPrice'}) - kan ikke prise noen rater`
+      }
+    }
   }
   const invoiceFlowExceptions = Array.isArray(exceptionsFromInvoiceFlow?.students) ? exceptionsFromInvoiceFlow : { students: [] }
 
