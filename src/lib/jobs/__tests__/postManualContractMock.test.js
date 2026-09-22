@@ -1,24 +1,16 @@
 'use strict'
 
 /**
- * `?isMock=true` used to be honoured by handleDbRequest's GET, PUT and DELETE branches but never
- * reached the manual-contract POST: it called `postManualContract(jsonBody, archive)` with two
- * arguments, so isMock was always undefined. Running the admin UI with VITE_MOCK_DATA=true therefore
- * archived REAL documents in P360 and inserted into the REAL contracts collection.
+ * handleDbRequest called `postManualContract(jsonBody, archive)` with two arguments, so isMock was
+ * always undefined - a mock run archived REAL documents in P360 and wrote to the REAL collection.
  *
- * postManualContract itself always supported it - these tests pin that support down so the
- * two-argument call cannot come back unnoticed.
- *
- * The other half of the fix lives in the route: handleDbRequest now skips archiveDocument entirely
- * for a mock request and substitutes a stub archive object. That half is not covered here - the
- * route registers itself with app.http() at require time and this repo has no harness for driving
- * one - so it is guarded by the stub's shape instead: postManualContract refuses outright when
- * archiveData.DocumentNumber is missing, which the final test below asserts.
+ * The route half (skipping archiveDocument for a mock request) is not covered here: app.http
+ * registers at require time and there is no harness for driving a route. It is guarded indirectly
+ * by the last test, which pins the stub shape the route has to supply.
  */
 
-// Set before requiring anything that pulls in config.js, which reads process.env at require time.
-// Without this both collection names resolve to the string 'undefined' and the two branches become
-// indistinguishable - which is exactly the bug being tested for.
+// Must be set before config.js loads, or both collection names resolve to 'undefined' and the two
+// branches become indistinguishable.
 process.env.MONGODB_CONTRACTS_COLLECTION = 'kontrakter'
 process.env.MONGODB_CONTRACTS_MOCK_COLLECTION = 'kontrakter-mock'
 
@@ -36,10 +28,7 @@ const baseContract = (overrides = {}) => ({
   ...overrides
 })
 
-/**
- * Same mongo double as postManualContractAnsvarlig.test.js, but recording WHICH collection each
- * insert went to - that is the whole point here.
- */
+/** As postManualContractAnsvarlig.test.js, but recording which collection each insert went to. */
 const makeDeps = () => {
   const seen = { student: [], person: [], insertedInto: [] }
 
@@ -91,8 +80,7 @@ describe('isMock routes the contract away from production', () => {
   })
 
   test('a MISSING isMock still writes to the real collection', async () => {
-    // The bug was the absence of the argument, not a wrong value. Pinning the default means the
-    // two-argument call keeps working for any caller that genuinely wants production.
+    // The bug was the missing argument, not a wrong value.
     const { seen, deps } = makeDeps()
 
     await postManualContract(baseContract(), ARCHIVE_DATA, undefined, deps)
@@ -123,8 +111,7 @@ describe('a mock contract does not reach the external lookups', () => {
 
 describe('the archive stub the route substitutes for a mock run', () => {
   test('a DocumentNumber is required, which is why the stub carries one', async () => {
-    // handleDbRequest skips archiveDocument for a mock request and passes a stub instead. If that
-    // stub ever loses its DocumentNumber, this is the refusal it would hit.
+    // If the route's stub ever loses its DocumentNumber, this is the refusal it hits.
     const { seen, deps } = makeDeps()
 
     const result = await postManualContract(baseContract(), {}, true, deps)
@@ -141,8 +128,7 @@ describe('the archive stub the route substitutes for a mock run', () => {
     await postManualContract(baseContract(), stub, true, deps)
 
     assert.equal(seen.insertedInto.length, 1)
-    // A manual contract is signed by definition, so the number lands on signedSkjemaInfo -
-    // unSignedskjemaInfo stays 'Ukjent'.
+    // A manual contract is signed by definition, so the number lands on signedSkjemaInfo.
     assert.equal(seen.insertedInto[0].document.signedSkjemaInfo.archiveDocumentNumber, 'MOCK-00000-0')
   })
 })

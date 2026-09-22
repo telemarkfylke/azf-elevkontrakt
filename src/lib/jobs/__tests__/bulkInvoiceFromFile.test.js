@@ -440,8 +440,7 @@ describe('bulkInvoiceFromFile - matching students', () => {
   })
 
   test('an invalid row is identified by line and cell, without echoing the whole row back', async () => {
-    // The report is admin-only but still personal data; the rest of the row is the admin's own file
-    // and adds nothing, so only the offending cell travels.
+    // The rest of the row is the admin's own file and adds nothing to the report.
     const { deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] } })
     const report = await bulkInvoiceFromFile(deps, { csvText: csv('ikke-et-fnr'), mode: 'boughtOut', dryRun: true })
 
@@ -757,8 +756,7 @@ describe('bulkInvoiceFromFile - an unusable price list', () => {
   })
 
   test('a price that is not a number is refused BEFORE anything is billed', async () => {
-    // Prices are strings in settings. One that Number() cannot parse yields NaN on every rate and
-    // propagates into totals.sum, so the run reports a NaN total having billed real money.
+    // An unparseable price yields NaN on every rate and poisons totals.sum after billing real money.
     for (const regularPrice of ['3 500', '3.500,-', 'gratis', '']) {
       const priceList = { prices: { regularPrice }, exceptionsFromRegularPrices: { students: [], classes: [] } }
       const { calls, deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] }, priceList })

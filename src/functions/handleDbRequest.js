@@ -76,16 +76,8 @@ app.http('handleDbRequest', {
               logger('info', [logPrefix, 'Mottok et manuelt kontraktsdokument'])
               let archive
               if (isMock === true) {
-                /**
-                 * Archiving is the one irreversible half of this handler, and it used to run even for
-                 * a mock request: `?isMock=true` was honoured by GET, PUT and DELETE but never reached
-                 * this branch, so running the admin UI with VITE_MOCK_DATA=true created REAL documents
-                 * in P360 - and, since archiveDocument gained syncEnterprise, real organisation records
-                 * with them.
-                 *
-                 * The stub carries the shape postManualContract requires: it rejects outright when
-                 * archiveData.DocumentNumber is missing, so this cannot be left empty.
-                 */
+                // Archiving is the irreversible half, so a mock run must not reach it at all.
+                // The stub needs a DocumentNumber - postManualContract refuses without one.
                 logger('info', [logPrefix, 'Mock-kontrakt - hopper over arkivering, ingenting skrives til P360'])
                 archive = {
                   Recno: 0,
@@ -138,8 +130,7 @@ app.http('handleDbRequest', {
               logger('info', [logPrefix, 'Oppretter et manuelt kontraktsdokument som kan postes til databasen'])
               let manualContract
               try {
-                // isMock decides the target collection and whether the duplicate/historical checks
-                // run - postManualContract has always supported it, it was just never passed.
+                // isMock picks the target collection and skips the duplicate/historical checks.
                 manualContract = await postManualContract(jsonBody, archive, isMock)
               } catch (error) {
                 logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])

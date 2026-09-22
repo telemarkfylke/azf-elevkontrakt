@@ -216,11 +216,10 @@ const findContractDefect = (contract) => {
 }
 
 /**
- * Whether a settings price can actually be turned into an amount.
+ * Whether a settings price can be turned into an amount.
  *
- * Number() is too permissive on its own: `Number('')` and `Number(' ')` are 0, not NaN, so a blank
- * price would sail through and bill everyone 0 kroner rather than failing. Anything empty is a
- * missing price, not a free PC.
+ * Number() alone is too permissive: `Number('')` is 0, not NaN, so a blank price would bill
+ * everyone 0 kroner instead of failing.
  *
  * @param {String|Number} value
  * @returns {Boolean}
@@ -263,16 +262,9 @@ const findPendingBuyOutInvoices = async (contractId, getDocumentsFn) => {
 /**
  * Every exit path returns this same key set, so a caller never has to null-check a bucket.
  *
- * **This report is personal data by design, and deliberately unmasked.** `notFound`, `multiMatch`
- * and `skipped` carry real fødselsnumre because the whole point is that an admin can match entries
- * back to the rows of the file they just uploaded; maskFnr here would make the report useless for
- * the one job it has. The endpoint is gated on elevkontrakt.administrator-readwrite accordingly.
- * That is a decision, not an oversight - the logs a few lines down DO mask, and the difference is
- * intentional.
- *
- * `invalidRows` is the exception: it identifies a bad row by line number and the offending cell
- * only, never the whole row. The rest of the row is the admin's own file and tells them nothing
- * they did not already have.
+ * The unmasked fnr in `notFound`/`multiMatch`/`skipped` is deliberate, not an oversight: an admin
+ * has to match entries back to their own file. The logs below still mask. `invalidRows` is the
+ * exception - line number and offending cell only, never the whole row.
  */
 const emptyReport = (overrides = {}) => ({
   dryRun: true,
@@ -406,7 +398,7 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
   for (const [index, row] of rows.entries()) {
     const rawFnr = row[fnrColumn]
     const fnr = normalizeStudentFnr(rawFnr)
-    // +2 puts this on the line number the admin sees in Excel: +1 for the header, +1 for 1-based rows.
+    // +2 = the line number Excel shows: one for the header, one for 1-based rows.
     const line = index + 2
     if (!fnr) {
       report.invalidRows.push({
@@ -454,14 +446,8 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
   if (!prices || !Array.isArray(exceptionsFromRegularPrices?.students) || !Array.isArray(exceptionsFromRegularPrices?.classes)) {
     return { ...report, fatal: { reason: 'price-list-unavailable', message: 'Prislisten i settings mangler eller har feil form - kan ikke prise noen rater' } }
   }
-  /**
-   * Prisene er strenger i settings. En som ikke er et tall ('3 500', '3.500,-') gir NaN på hver
-   * rate, og NaN forplanter seg gjennom report.totals.sum til hele summen - stille, siden hver
-   * enkelt faktura fortsatt "ser riktig ut".
-   *
-   * Sjekkes her sammen med resten av prislisten, slik at det stopper FØR noe er fakturert i stedet
-   * for å bli oppdaget på totalen etterpå.
-   */
+  // En pris som ikke er et tall ('3 500') gir NaN på hver rate og forplanter seg til totals.sum.
+  // Sjekkes her, slik at det stopper før noe er fakturert.
   const unpriceable = ['regularPrice', 'reducedPrice'].filter(key => prices[key] !== undefined && !isPriceable(prices[key]))
   if (!isPriceable(prices.regularPrice) || unpriceable.length > 0) {
     return {

@@ -274,10 +274,8 @@ describe('archiveDocument — which party gets synced, and how', () => {
   })
 
   test('the orgnr is read from foresattFnr — the one identifier slot, shared with the person path', async () => {
-    // There used to be an `|| payload.ansvarligOrgnr` fallback here that nothing in either repo
-    // produced. Its only effect was that a payload using that name archived successfully and then
-    // stored ansvarligInfo.fnr = 'Ukjent', since documentSchema reads foresattFnr alone - an
-    // unbillable contract created without a single error. Pinned so it cannot come back.
+    // An `|| payload.ansvarligOrgnr` fallback used to live here. Nothing produced it, and its only
+    // effect was an unbillable 'Ukjent' contract created without a single error.
     const { seen, deps } = makeSyncSpies()
 
     await archiveDocument({

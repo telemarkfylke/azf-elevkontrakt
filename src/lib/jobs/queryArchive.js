@@ -217,11 +217,8 @@ const archiveDocument = async (payload, deps = {}) => {
   // Whoever signs the agreement: an organisation, a guardian, or the student themselves.
   let avsenderReferenceNumber
   if (isOrgAnsvarlig) {
-    // foresattFnr is the identifier slot for BOTH kinds of ansvarlig - an orgnr here, an fnr on the
-    // branch below - and is what documentSchema and postManualContract read. There used to be an
-    // `|| payload.ansvarligOrgnr` fallback here that nothing produced; it only meant a payload using
-    // that name archived fine and then stored ansvarligInfo.fnr = 'Ukjent', leaving a contract that
-    // no invoice run can resolve a recipient for. Better to fail here.
+    // foresattFnr is the identifier slot for both kinds of ansvarlig, and the only one
+    // documentSchema reads. Any other field name must fail here, not become an 'Ukjent' contract.
     const orgnr = payload.foresattFnr
     logger('info', [logPrefix, `Ansvarlig er en organisasjon, synkroniserer virksomhet ${orgnr}`])
     const enterprise = await _syncEnterprise(orgnr)

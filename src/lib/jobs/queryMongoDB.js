@@ -425,16 +425,11 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
             }
           } catch (archiveError) {
             /**
-             * Avvis heller enn å lage en kontrakt med navn 'Ukjent'.
+             * Arkivet er siste kilde som kan navngi en fiktiv elev - FINT bommet, FREG har ingenting.
+             * Faller vi gjennom, blir hele elevInfo 'Ukjent', og ingen jobb kan gjette navnet senere.
              *
-             * Dette er den siste kilden som kan navngi en fiktiv elev: FINT bommet, FREG har per
-             * definisjon ingenting. Faller vi gjennom her, blir hele elevInfo 'Ukjent' - og en
-             * kontrakt ingen kan kjenne igjen i oversikten er verre enn ingen kontrakt, siden
-             * ingen reparasjonsjobb kan gjette navnet i etterkant.
-             *
-             * 502, ikke 400: et ukjent fiktivt fnr er allerede stoppet tidligere, i readElevMappe
-             * (ArchiveLookupError 'not-found'). Kommer vi hit, er nummeret greit og arkivet nede -
-             * det skal prøves på nytt, ikke rettes.
+             * 502, ikke 400: et ukjent fiktivt fnr er allerede stoppet i readElevMappe. Her er
+             * nummeret greit og arkivet nede - prøv på nytt.
              */
             logger('error', [logPrefix, 'Klarte ikke hente elevdata fra arkivet', archiveError.message])
             return {
@@ -458,25 +453,20 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
 
     if (isOrgAnsvarlig) {
       /**
-       * Organisasjoner finnes ikke i FREG, så navnet må komme fra Enhetsregisteret.
+       * Organisasjoner finnes ikke i FREG, så navnet hentes fra Enhetsregisteret i stedet for å
+       * stole på ansvarligNavn fra forespørselen - navnet havner på fakturaen. Cachet (24 t).
        *
-       * Vi henter det her i stedet for å stole på ansvarligNavn fra forespørselen. Skjemaet sender
-       * riktignok normalt BRREG-navnet selv, men det faller tilbake på et fritekstfelt, og serveren
-       * kan ikke se forskjell - navnet havner på fakturaen, så det skal være verifisert her.
-       * Oppslaget er cachet (24 t) og treffer samme register som /SyncEnterprise gjorde ved
-       * arkivering, så det koster i praksis ingenting.
+       * Arkiveringen har allerede bevist at organisasjonen finnes, så et feilet oppslag her faller
+       * tilbake på navnet fra skjemaet og noterer at det er uverifisert, heller enn å miste kontrakten.
        */
       logger('info', [logPrefix, `Ansvarlig er en organisasjon (${contract.foresattFnr}), hopper over FREG-oppslag`])
       try {
         organisasjonData = await _lookupEnhet(contract.foresattFnr)
         if (!organisasjonData) {
-          // Arkiveringen har allerede bekreftet at organisasjonen finnes, så dette er uventet.
           logger('warn', [logPrefix, `Fant ikke organisasjon ${contract.foresattFnr} i Enhetsregisteret`])
           error.push({ error: 'Fant ikke organisasjonen i Enhetsregisteret, bruker navnet fra skjemaet', fnr: contract.foresattFnr })
         }
       } catch (brregError) {
-        // Ikke grunn til å avvise kontrakten: arkiveringen har allerede bevist at organisasjonen
-        // finnes. Vi faller tilbake på navnet fra skjemaet og noterer at det ikke er verifisert.
         logger('error', [logPrefix, 'Oppslag mot Enhetsregisteret feilet, bruker navnet fra skjemaet', brregError.message])
         error.push({ error: 'Kunne ikke verifisere organisasjonsnavnet mot Enhetsregisteret', fnr: contract.foresattFnr })
       }
@@ -496,13 +486,10 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
     }
   }
   /**
-   * Fyll ut dokumentet med data.
-   *
-   * For en organisasjon bygges dokumentet fra en kopi av kontrakten der ansvarligNavn er byttet ut
-   * med det Enhetsregisteret svarte. Navnet overstyres her i stedet for inne i fillManualDocument
-   * fordi dette er stedet som faktisk har gjort oppslaget - builderen har ingen I/O og skal ikke få
-   * noen. ansvarligEpost røres ikke: en fakturaadresse lagt inn av saksbehandler skal slå BRREGs
-   * generiske firmapost (se resolveSubledgerRecipient, xledgerUserImport.js).
+   * Fyll ut dokumentet med data. For en organisasjon byttes ansvarligNavn ut med det
+   * Enhetsregisteret svarte - her, ikke i fillManualDocument, som ikke skal gjøre oppslag.
+   * ansvarligEpost røres ikke: saksbehandlers fakturaadresse slår BRREGs firmapost (se
+   * resolveSubledgerRecipient).
    */
   const contractForDocument = organisasjonData?.navn
     ? { ...contract, ansvarligNavn: organisasjonData.navn }

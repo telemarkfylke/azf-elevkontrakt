@@ -58,8 +58,7 @@ const makeDeps = ({ studentFound = true, personFound = true, archivePerson = nul
         if (!archivePerson) throw new Error('Kunne ikke nå arkivet')
         return { privatePerson: archivePerson }
       },
-      // Must be stubbed even where the assertions ignore it: without it the org cases reach the
-      // real Enhetsregisteret over the network.
+      // Must be stubbed even where unused, or the org cases hit the real BRREG over the network.
       lookupEnhet: async (orgnr) => {
         seen.enhet.push(orgnr)
         if (brregThrows) throw new Error('Kunne ikke nå Enhetsregisteret')
@@ -180,11 +179,8 @@ describe('an organisation ansvarlig never goes near FREG', () => {
 })
 
 /**
- * The name reaches an invoice, so it must be the register's, not the request body's.
- *
- * The form normally sends BRREG's own name, but it falls back to a free-text field and the server
- * cannot tell which it received - the orgnr is proven by /SyncEnterprise at archive time, the name
- * never was.
+ * The name reaches an invoice, so it must be the register's, not the request body's. /SyncEnterprise
+ * proves the orgnr at archive time; nothing ever proved the name.
  */
 describe('the organisation name comes from Enhetsregisteret, not the request', () => {
   test('BRREG overrides a name the caller made up', async () => {
@@ -211,8 +207,7 @@ describe('the organisation name comes from Enhetsregisteret, not the request', (
   })
 
   test('the admin-entered invoice e-mail is NOT overridden', async () => {
-    // Deliberate: BRREG's epostadresse is a generic firmapost and often missing, so the address a
-    // saksbehandler entered wins. Only the name is verified.
+    // BRREG's epostadresse is a generic firmapost and often missing, so the admin's wins.
     const { seen, deps } = makeDeps({ enhet: { navn: 'TELEMARK FYLKESKOMMUNE', epostadresse: 'post@tfk.no' } })
 
     await postManualContract(
@@ -229,8 +224,8 @@ describe('the organisation name comes from Enhetsregisteret, not the request', (
   })
 
   test('a BRREG outage falls back to the submitted name and records it', async () => {
-    // The archive already proved the organisation exists, so losing the contract over a BRREG
-    // hiccup would be the wrong trade - but the name is then unverified and must say so.
+    // The archive already proved the org exists, so a BRREG hiccup must not lose the contract -
+    // but the name is then unverified and must say so.
     const { seen, deps } = makeDeps({ brregThrows: true })
 
     const result = await postManualContract(
@@ -301,9 +296,8 @@ describe('a fiktiv elev that FINT does not know', () => {
   })
 
   test('a failed archive lookup REFUSES rather than writing a nameless contract', async () => {
-    // The archive is the last source that can name a fiktiv elev - FINT missed, and FREG has
-    // nothing by definition. Falling through leaves elevInfo entirely 'Ukjent', and no repair job
-    // can guess the name afterwards, so the contract is worth less than the refusal.
+    // Last source that can name a fiktiv elev. Falling through leaves elevInfo entirely 'Ukjent',
+    // and no repair job can guess the name afterwards.
     const { seen, deps } = makeDeps({ studentFound: false, archivePerson: null })
 
     const result = await postManualContract(baseContract({ elevFnrType: 'fiktiv' }), ARCHIVE_DATA, false, deps)
@@ -314,8 +308,7 @@ describe('a fiktiv elev that FINT does not know', () => {
   })
 
   test('502, not 400 — the number is fine, the archive is not', async () => {
-    // An unknown fiktiv fnr is already rejected earlier, inside readElevMappe. Reaching this branch
-    // means a reachability problem, which the admin should retry rather than "correct".
+    // An unknown fiktiv fnr is already rejected in readElevMappe, so this branch means retry.
     const { deps } = makeDeps({ studentFound: false, archivePerson: null })
 
     const result = await postManualContract(baseContract({ elevFnrType: 'fiktiv' }), ARCHIVE_DATA, false, deps)
