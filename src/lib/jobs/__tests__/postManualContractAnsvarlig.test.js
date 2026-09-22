@@ -300,15 +300,27 @@ describe('a fiktiv elev that FINT does not know', () => {
     assert.equal(seen.inserted[0].error.some(e => e.error === 'Elev ikke funnet'), false)
   })
 
-  test('records an error when the archive lookup itself fails, but still writes the contract', async () => {
-    // The archive already confirmed this person during the /checkIdentifier step; a failure here is
-    // a transient archive problem, not grounds to lose an otherwise valid contract.
+  test('a failed archive lookup REFUSES rather than writing a nameless contract', async () => {
+    // The archive is the last source that can name a fiktiv elev - FINT missed, and FREG has
+    // nothing by definition. Falling through leaves elevInfo entirely 'Ukjent', and no repair job
+    // can guess the name afterwards, so the contract is worth less than the refusal.
     const { seen, deps } = makeDeps({ studentFound: false, archivePerson: null })
 
-    await postManualContract(baseContract({ elevFnrType: 'fiktiv' }), ARCHIVE_DATA, false, deps)
+    const result = await postManualContract(baseContract({ elevFnrType: 'fiktiv' }), ARCHIVE_DATA, false, deps)
 
-    assert.equal(seen.inserted.length, 1)
-    assert.equal(seen.inserted[0].error.some(e => /arkivoppslag feilet/.test(e.error)), true)
+    assert.equal(result.status, 502)
+    assert.match(result.error, /Kunne ikke hente elevdata fra arkivet/)
+    assert.equal(seen.inserted.length, 0, 'no contract may be written')
+  })
+
+  test('502, not 400 — the number is fine, the archive is not', async () => {
+    // An unknown fiktiv fnr is already rejected earlier, inside readElevMappe. Reaching this branch
+    // means a reachability problem, which the admin should retry rather than "correct".
+    const { deps } = makeDeps({ studentFound: false, archivePerson: null })
+
+    const result = await postManualContract(baseContract({ elevFnrType: 'fiktiv' }), ARCHIVE_DATA, false, deps)
+
+    assert.equal(result.status, 502)
   })
 })
 

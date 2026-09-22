@@ -424,9 +424,23 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
               etternavn: arkiv?.privatePerson?.lastName
             }
           } catch (archiveError) {
+            /**
+             * Avvis heller enn å lage en kontrakt med navn 'Ukjent'.
+             *
+             * Dette er den siste kilden som kan navngi en fiktiv elev: FINT bommet, FREG har per
+             * definisjon ingenting. Faller vi gjennom her, blir hele elevInfo 'Ukjent' - og en
+             * kontrakt ingen kan kjenne igjen i oversikten er verre enn ingen kontrakt, siden
+             * ingen reparasjonsjobb kan gjette navnet i etterkant.
+             *
+             * 502, ikke 400: et ukjent fiktivt fnr er allerede stoppet tidligere, i readElevMappe
+             * (ArchiveLookupError 'not-found'). Kommer vi hit, er nummeret greit og arkivet nede -
+             * det skal prøves på nytt, ikke rettes.
+             */
             logger('error', [logPrefix, 'Klarte ikke hente elevdata fra arkivet', archiveError.message])
-            error.push({ error: 'Elev med fiktivt fnr ikke funnet i FINT, og arkivoppslag feilet', fnr: contract.fnr })
-            elevData = undefined
+            return {
+              status: 502,
+              error: 'Kunne ikke hente elevdata fra arkivet for fiktivt fødselsnummer. Prøv igjen.'
+            }
           }
         } else {
           logger('info', [logPrefix, 'Elev ikke funnet i FINT, sjekker FREG'])
