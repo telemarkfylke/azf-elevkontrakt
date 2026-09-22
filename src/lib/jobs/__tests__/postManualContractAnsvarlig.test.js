@@ -29,8 +29,8 @@ const baseContract = (overrides = {}) => ({
  * A mongo double that records inserts instead of performing them, plus spies on the FINT/FREG/
  * archive lookups so the tests can assert which ones were reached.
  */
-const makeDeps = ({ studentFound = true, personFound = true, archivePerson = null } = {}) => {
-  const seen = { student: [], person: [], archive: [], inserted: [] }
+const makeDeps = ({ studentFound = true, personFound = true, archivePerson = null, enhet = { navn: 'TELEMARK FYLKESKOMMUNE' }, brregThrows = false } = {}) => {
+  const seen = { student: [], person: [], archive: [], enhet: [], inserted: [] }
 
   const collection = () => ({
     insertOne: async (document) => { seen.inserted.push(document); return { acknowledged: true, insertedId: 'id' } },
@@ -57,6 +57,13 @@ const makeDeps = ({ studentFound = true, personFound = true, archivePerson = nul
         seen.archive.push(ssn)
         if (!archivePerson) throw new Error('Kunne ikke nå arkivet')
         return { privatePerson: archivePerson }
+      },
+      // Must be stubbed even where the assertions ignore it: without it the org cases reach the
+      // real Enhetsregisteret over the network.
+      lookupEnhet: async (orgnr) => {
+        seen.enhet.push(orgnr)
+        if (brregThrows) throw new Error('Kunne ikke nå Enhetsregisteret')
+        return enhet
       }
     }
   }
@@ -169,6 +176,90 @@ describe('an organisation ansvarlig never goes near FREG', () => {
     )
 
     assert.deepEqual(seen.inserted[0].signedBy, { navn: 'TELEMARK FYLKESKOMMUNE', fnr: '929882989' })
+  })
+})
+
+/**
+ * The name reaches an invoice, so it must be the register's, not the request body's.
+ *
+ * The form normally sends BRREG's own name, but it falls back to a free-text field and the server
+ * cannot tell which it received - the orgnr is proven by /SyncEnterprise at archive time, the name
+ * never was.
+ */
+describe('the organisation name comes from Enhetsregisteret, not the request', () => {
+  test('BRREG overrides a name the caller made up', async () => {
+    const { seen, deps } = makeDeps({ enhet: { navn: 'TELEMARK FYLKESKOMMUNE' } })
+
+    await postManualContract(
+      baseContract({ ansvarligType: 'organisasjon', ansvarligNavn: 'NOE HELT ANNET AS', foresattFnr: '929882989' }),
+      ARCHIVE_DATA, false, deps
+    )
+
+    assert.deepEqual(seen.enhet, ['929882989'])
+    assert.equal(seen.inserted[0].ansvarligInfo.navn, 'TELEMARK FYLKESKOMMUNE')
+  })
+
+  test('signedBy gets the verified name too — it is the same organisation', async () => {
+    const { seen, deps } = makeDeps({ enhet: { navn: 'TELEMARK FYLKESKOMMUNE' } })
+
+    await postManualContract(
+      baseContract({ ansvarligType: 'organisasjon', ansvarligNavn: 'NOE HELT ANNET AS', foresattFnr: '929882989' }),
+      ARCHIVE_DATA, false, deps
+    )
+
+    assert.equal(seen.inserted[0].signedBy.navn, 'TELEMARK FYLKESKOMMUNE')
+  })
+
+  test('the admin-entered invoice e-mail is NOT overridden', async () => {
+    // Deliberate: BRREG's epostadresse is a generic firmapost and often missing, so the address a
+    // saksbehandler entered wins. Only the name is verified.
+    const { seen, deps } = makeDeps({ enhet: { navn: 'TELEMARK FYLKESKOMMUNE', epostadresse: 'post@tfk.no' } })
+
+    await postManualContract(
+      baseContract({
+        ansvarligType: 'organisasjon',
+        ansvarligNavn: 'TELEMARK FYLKESKOMMUNE',
+        ansvarligEpost: 'faktura.avdeling@tfk.no',
+        foresattFnr: '929882989'
+      }),
+      ARCHIVE_DATA, false, deps
+    )
+
+    assert.equal(seen.inserted[0].ansvarligInfo.epost, 'faktura.avdeling@tfk.no')
+  })
+
+  test('a BRREG outage falls back to the submitted name and records it', async () => {
+    // The archive already proved the organisation exists, so losing the contract over a BRREG
+    // hiccup would be the wrong trade - but the name is then unverified and must say so.
+    const { seen, deps } = makeDeps({ brregThrows: true })
+
+    const result = await postManualContract(
+      baseContract({ ansvarligType: 'organisasjon', ansvarligNavn: 'TELEMARK FYLKESKOMMUNE', foresattFnr: '929882989' }),
+      ARCHIVE_DATA, false, deps
+    )
+
+    assert.equal(result.status, undefined, 'the contract is still created')
+    assert.equal(seen.inserted[0].ansvarligInfo.navn, 'TELEMARK FYLKESKOMMUNE')
+    assert.equal(seen.inserted[0].error.some(e => /Kunne ikke verifisere organisasjonsnavnet/.test(e.error)), true)
+  })
+
+  test('an orgnr BRREG does not know is recorded rather than silently accepted', async () => {
+    const { seen, deps } = makeDeps({ enhet: null })
+
+    await postManualContract(
+      baseContract({ ansvarligType: 'organisasjon', ansvarligNavn: 'TELEMARK FYLKESKOMMUNE', foresattFnr: '929882989' }),
+      ARCHIVE_DATA, false, deps
+    )
+
+    assert.equal(seen.inserted[0].error.some(e => /Fant ikke organisasjonen i Enhetsregisteret/.test(e.error)), true)
+  })
+
+  test('a person ansvarlig never touches Enhetsregisteret', async () => {
+    const { seen, deps } = makeDeps()
+
+    await postManualContract(baseContract(), ARCHIVE_DATA, false, deps)
+
+    assert.deepEqual(seen.enhet, [])
   })
 })
 

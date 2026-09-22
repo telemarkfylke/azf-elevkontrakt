@@ -6,6 +6,7 @@ const { mongoDB } = require('../../../config')
 // const { getSchoolyear } = require("../helpers/getSchoolyear")
 const { fillDocument, fillManualDocument } = require('../documentSchema.js')
 const { readElevMappe } = require('./queryArchive.js')
+const { lookupEnhet } = require('./queryBrreg.js')
 const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, getFakturaInfoMismatches } = require('./contractChecks.js')
 const { invoiceQueryForContractIds } = require('./invoiceQueries.js')
 const { patchUser } = require('./queryPureservice')
@@ -364,6 +365,7 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
     student: _student = student,
     person: _person = person,
     readElevMappe: _readElevMappe = readElevMappe,
+    lookupEnhet: _lookupEnhet = lookupEnhet,
     fillManualDocument: _fillManualDocument = fillManualDocument
   } = deps
 
@@ -382,6 +384,7 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
   const mongoClient = await _getMongoClient()
   let elevData
   let ansvarligData
+  let organisasjonData
   const error = []
 
   const isOrgAnsvarlig = contract.ansvarligType === 'organisasjon'
@@ -440,9 +443,29 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
     }
 
     if (isOrgAnsvarlig) {
-      // Organisasjoner finnes ikke i FREG. Allerede validert mot Enhetsregisteret, og
-      // fillManualDocument bygger ansvarligInfo direkte fra kontrakten.
+      /**
+       * Organisasjoner finnes ikke i FREG, så navnet må komme fra Enhetsregisteret.
+       *
+       * Vi henter det her i stedet for å stole på ansvarligNavn fra forespørselen. Skjemaet sender
+       * riktignok normalt BRREG-navnet selv, men det faller tilbake på et fritekstfelt, og serveren
+       * kan ikke se forskjell - navnet havner på fakturaen, så det skal være verifisert her.
+       * Oppslaget er cachet (24 t) og treffer samme register som /SyncEnterprise gjorde ved
+       * arkivering, så det koster i praksis ingenting.
+       */
       logger('info', [logPrefix, `Ansvarlig er en organisasjon (${contract.foresattFnr}), hopper over FREG-oppslag`])
+      try {
+        organisasjonData = await _lookupEnhet(contract.foresattFnr)
+        if (!organisasjonData) {
+          // Arkiveringen har allerede bekreftet at organisasjonen finnes, så dette er uventet.
+          logger('warn', [logPrefix, `Fant ikke organisasjon ${contract.foresattFnr} i Enhetsregisteret`])
+          error.push({ error: 'Fant ikke organisasjonen i Enhetsregisteret, bruker navnet fra skjemaet', fnr: contract.foresattFnr })
+        }
+      } catch (brregError) {
+        // Ikke grunn til å avvise kontrakten: arkiveringen har allerede bevist at organisasjonen
+        // finnes. Vi faller tilbake på navnet fra skjemaet og noterer at det ikke er verifisert.
+        logger('error', [logPrefix, 'Oppslag mot Enhetsregisteret feilet, bruker navnet fra skjemaet', brregError.message])
+        error.push({ error: 'Kunne ikke verifisere organisasjonsnavnet mot Enhetsregisteret', fnr: contract.foresattFnr })
+      }
     } else if (contract.foresattFnr !== '') {
       // Hent mer info om ansvarlig
       logger('info', [logPrefix, 'Henter data om ansvarlig'])
@@ -458,8 +481,19 @@ const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
       error.push({ error: 'Ansvarlig ikke funnet i FREG', fnr: contract.foresattFnr || contract.fnr })
     }
   }
-  // Fyll ut dokumentet med data
-  let document = _fillManualDocument(contract, archiveData, elevData, ansvarligData, error)
+  /**
+   * Fyll ut dokumentet med data.
+   *
+   * For en organisasjon bygges dokumentet fra en kopi av kontrakten der ansvarligNavn er byttet ut
+   * med det Enhetsregisteret svarte. Navnet overstyres her i stedet for inne i fillManualDocument
+   * fordi dette er stedet som faktisk har gjort oppslaget - builderen har ingen I/O og skal ikke få
+   * noen. ansvarligEpost røres ikke: en fakturaadresse lagt inn av saksbehandler skal slå BRREGs
+   * generiske firmapost (se resolveSubledgerRecipient, xledgerUserImport.js).
+   */
+  const contractForDocument = organisasjonData?.navn
+    ? { ...contract, ansvarligNavn: organisasjonData.navn }
+    : contract
+  let document = _fillManualDocument(contractForDocument, archiveData, elevData, ansvarligData, error)
 
   // Sjekk for duplikater og historisk fakturaInfo (hoppes over for mock-data)
   if (isMock !== true) {
