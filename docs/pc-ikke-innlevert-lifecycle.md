@@ -211,14 +211,6 @@ notice them in the admin UI.
 `determineHistoryMoveTarget` - it has no eligibility rules of its own, so the two directions can
 never disagree.
 
-> **A bought-out contract could not use this exit until recently.** `'Fakturert - Utkjøp'` was written
-> to a contract rate by every buyout and read by no consumer, so `checkRateCandidacy`
-> (`updatePaymentStatus.js`) never asked Xledger about it and the rate never reached `'Betalt'` - the
-> buyout payment sweep updates only the invoice document, never the contract's `fakturaInfo`. Those
-> contracts therefore failed `determineHistoryMoveTarget` permanently and stayed here however fully
-> they were paid. `checkRateCandidacy` (`src/lib/jobs/updatePaymentStatus.js`) now accepts the status.
-> Expect one unusually large report from this job the first night after that change ships.
-
 1. Fetches candidates with a pre-filter - contracts that are returned, bought out, **or** have
    every rate in `Betalt`/`Kreditert`. The rule can only answer `historic` in one of those three
    shapes, so this is exactly the candidate set. The fully-paid branch is built from
