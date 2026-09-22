@@ -83,8 +83,26 @@ const resolveRecipientImportStatus = async (invoice, deps = {}) => {
  */
 
 
+/**
+ * The description printed on the invoice line the recipient reads.
+ *
+ * These rails carry two different things. A buyout keeps its original wording exactly, counter and
+ * all. A one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime') stores its own label and
+ * reads like the nightly rent invoice does in xledgerInvoiceImport.js - telling a guardian their PC
+ * was "kjøpt ut" when it was not would be wrong on the document they actually pay against.
+ * @param {Object} invoice
+ * @param {Number} rateIndex - 0-based index of the rate within invoice.rates
+ */
+const buildInvoiceLineText = (invoice, rateIndex) => {
+    const studentName = invoice.student?.navn
+    if (invoice.invoiceLineLabel) return `Faktura for ${studentName} - ${invoice.invoiceLineLabel}`
+    return `Faktura for ${studentName} - Utkjøp av elev-PC - Faktura ${rateIndex + 1}/${invoice.rates.length}`
+}
+
 const handleBuyOutInvoice = async (invoices, deps = {}) => {
     const {
+        // Explicit argument rather than config, so the environment cannot flip it by accident.
+        dryRun = false,
         getThisYearsPriceList: _getThisYearsPriceList = getThisYearsPriceList,
         hasInvoiceFlowException: _hasInvoiceFlowException = hasInvoiceFlowException,
         schoolInfoList: _schoolInfoList = schoolInfoList,
@@ -134,7 +152,7 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
                 // 'Date': new Date().toLocaleDateString('no-NO'), // Xledger will set the date automatically to the date of import
                 'Ready To Invoice': '1', // Sett to manual review in Xledger before sending the invoice (1 means manual review, 2 means ready to be invoiced without review)
                 Product: '4651000', // Product code for "ElevPC",
-                'Tekst (imp)': `Faktura for ${invoice.student.navn} - Utkjøp av elev-PC - Faktura ${i+1}/${invoice.rates.length}`, // Description text for the invoice line
+                'Tekst (imp)': buildInvoiceLineText(invoice, i), // Description text for the invoice line
                 Quantity: '1',
                 'Unit Price': _returnCorrectPriceForStudent(invoice.student.fnr, invoice.student.klasse, prices, exceptionsFromRegularPrices), // Price based on settings and exceptions
                 'Company No': invoice.recipient.fnr, // Person that will be invoiced
@@ -149,7 +167,7 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
             csvDataArray.push(csvData)
         }
     }
-   return await _generateInvoiceImportFile('buyOut', csvDataArray, { skippedNotImportedToXledger })
+   return await _generateInvoiceImportFile('buyOut', csvDataArray, { skippedNotImportedToXledger, dryRun })
 }
 /**
  * 
@@ -157,6 +175,7 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
  */
 const handleExtraInvoice = async (invoices, deps = {}) => {
     const {
+        dryRun = false,
         schoolInfoList: _schoolInfoList = schoolInfoList,
         generateSerialNumber: _generateSerialNumber = generateSerialNumber,
         standardFields: _standardFields = standardFields,
@@ -229,7 +248,7 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
             csvDataArray.push(csvData)
         }
     }
-   return await _generateInvoiceImportFile('extraInvoice', csvDataArray, { skippedNotImportedToXledger })
+   return await _generateInvoiceImportFile('extraInvoice', csvDataArray, { skippedNotImportedToXledger, dryRun })
 }
 
 /**
@@ -238,6 +257,9 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
  */
 const processInvoices = async (deps = {}) => {
     const {
+        // { dryRun: true } builds the CSVs without sending or marking anything 'Fakturert'.
+        // Default false, so the scheduled job and runExtraInvoiceImport are unaffected.
+        dryRun = false,
         getDocuments: _getDocuments = getDocuments,
         handleBuyOutInvoice: _handleBuyOutInvoice = handleBuyOutInvoice,
         handleExtraInvoice: _handleExtraInvoice = handleExtraInvoice,
@@ -274,7 +296,7 @@ const processInvoices = async (deps = {}) => {
     if(buyOutInvoices.length > 0) {
         _logger('info', [logPrefix, `Processing ${buyOutInvoices.length} buyOut invoices`])
         try {
-            buyOutResults = await _handleBuyOutInvoice(buyOutInvoices)
+            buyOutResults = await _handleBuyOutInvoice(buyOutInvoices, { dryRun })
         } catch (error) {
             // Without this, an Xledger import failure aborts status write-back for the whole batch with nobody aware -
             // the same invoices get resent on the next scheduled run. Catch it here so extraInvoice can still be attempted below.
@@ -286,7 +308,7 @@ const processInvoices = async (deps = {}) => {
     if(extraInvoices.length > 0) {
         _logger('info', [logPrefix, `Processing ${extraInvoices.length} extra invoices`])
         try {
-            extraInvoiceResults = await _handleExtraInvoice(extraInvoices)
+            extraInvoiceResults = await _handleExtraInvoice(extraInvoices, { dryRun })
         } catch (error) {
             _logger('error', [logPrefix, 'Error processing extra invoices', error])
             await _sendImportFailureAlert('extraInvoice', error)
@@ -304,6 +326,7 @@ module.exports = {
     handleBuyOutInvoice,
     handleExtraInvoice,
     resolveRecipientImportStatus,
+    buildInvoiceLineText,
 }
 
 

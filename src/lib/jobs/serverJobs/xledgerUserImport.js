@@ -1,5 +1,7 @@
 const { person } = require('../queryFREG.js')
 const { lookupKRR } = require('../queryKRR.js')
+const { lookupEnhet } = require('../queryBrreg.js')
+const { isOrganisation } = require('../../helpers/identifier.js')
 const { getDocuments, updateDocument } = require('../queryMongoDB.js')
 const { logger } = require('@vtfk/logger')
 const fs = require('fs')
@@ -111,6 +113,96 @@ const toProperCase = (str) => {
 const addExtraZero = (num) => {
   return num < 10 ? `0${num}` : num
 }
+
+/**
+ * Resolves what the SL04-SYS subledger row needs about the party being invoiced.
+ *
+ * The old code went straight to FREG + KRR and `continue`d when either came back empty. An
+ * organisation has no FREG record, so org contracts fell into that hole and silently never reached
+ * Xledger - which then held back all their invoices via the isRecipientImportedToXledger gate.
+ *
+ * Two branches only, since the ansvarlig is never fiktiv; a contract with a fiktiv student still has
+ * an ordinary FREG-resolvable ansvarlig, so this job needs no archive access.
+ *
+ * Uses queryBrreg rather than /SyncEnterprise, which writes to P360 on every call - this job runs
+ * nightly over every unimported contract.
+ *
+ * @param {Object} document - a contract document
+ * @param {Object} [deps]
+ * @returns {Promise<Object|null>} - the resolved recipient, or null if nothing could be resolved
+ */
+const resolveSubledgerRecipient = async (document, deps = {}) => {
+  const {
+    getPersonData: _getPersonData = getPersonData,
+    getKRRData: _getKRRData = getKRRData,
+    lookupEnhet: _lookupEnhet = lookupEnhet,
+    isOrganisation: _isOrganisation = isOrganisation
+  } = deps
+  const logPrefix = 'resolveSubledgerRecipient'
+  const ansvarligInfo = document?.ansvarligInfo
+
+  if (_isOrganisation(ansvarligInfo)) {
+    // ansvarligInfo.fnr holds the organisasjonsnummer - the identifier slot CompanyNo already reads.
+    const orgnr = ansvarligInfo?.fnr
+    const enhet = await _lookupEnhet(orgnr)
+    if (!enhet) {
+      logger('warn', [logPrefix, `Fant ikke organisasjon ${orgnr} i Enhetsregisteret for dokument ${document._id}`])
+      return null
+    }
+    return {
+      companyNo: orgnr,
+      description: enhet.navn,
+      streetAddress: enhet.adresse?.gateadresse || null,
+      zipCode: enhet.adresse?.postnummer || null,
+      city: enhet.adresse?.poststed || null,
+      // Admin-entered address wins over BRREG's generic firmapost, which is often missing.
+      email: ansvarligInfo?.epost && ansvarligInfo.epost !== 'Ukjent' ? ansvarligInfo.epost : enhet.epostadresse,
+      phone: enhet.telefon || null,
+      isOrganisation: true
+    }
+  }
+
+  // Ordinary person - unchanged, and the path every legacy document takes since it has no `type`.
+  const personData = await _getPersonData(document)
+  const krrData = await _getKRRData(ansvarligInfo?.fnr)
+  if (!personData || !krrData) return null
+
+  return {
+    companyNo: personData.foedselsEllerDNummer || ansvarligInfo?.fnr || null,
+    description: toProperCase(personData.fulltnavn) || null,
+    streetAddress: toProperCase(personData.bostedsadresse?.gateadresse || personData.postadresse?.gateadresse) || null,
+    zipCode: personData.bostedsadresse?.postnummer || personData.postadresse?.postnummer || null,
+    city: toProperCase(personData.bostedsadresse?.poststed || personData.postadresse?.poststed) || null,
+    email: krrData.kontaktinformasjon?.epostadresse || null,
+    phone: krrData.kontaktinformasjon?.mobiltelefonnummer || null,
+    isOrganisation: false
+  }
+}
+
+/**
+ * Builds one SL04-SYS row. Single builder rather than the two near-identical object literals the
+ * normal and manual-review paths used to carry, so the two can no longer drift.
+ *
+ * @param {Object} recipient - from resolveSubledgerRecipient
+ * @param {Object} document
+ * @returns {Object} - keyed by the template's header text
+ */
+const buildSubledgerRow = (recipient, document) => ({
+  'Update Level': 2,
+  'Ledger Type Imp': 'AR',
+  // Notes can include additional information about the user, in our case it will be the year the
+  // student or the parent is imported.
+  Notes: `${new Date().getFullYear()}-${addExtraZero(new Date().getMonth() + 1)}`,
+  UUID: document._id,
+  CompanyNo: recipient.companyNo,
+  Description: recipient.description,
+  'Street Address': recipient.streetAddress,
+  'Zip Code': recipient.zipCode,
+  City: recipient.city,
+  Phone: recipient.phone,
+  'E-mail': recipient.email,
+  'End Of Line': 'x'
+})
 
 /**
  * Fetch person data for all documents and create the csvstring using template literals.
@@ -243,51 +335,30 @@ const createCsvDataArray = async () => {
   const csvDataArrayForManualReview = []
   const documentsThatFailed = []
   for (const document of documents) {
-    const personData = await getPersonData(document)
-    const krrData = await getKRRData(document.ansvarligInfo.fnr)
-    if (!personData || !krrData) {
-      logger('warn', [logPrefix, `No person data or krr data found for document with _id: ${document._id}`])
+    let recipient
+    try {
+      recipient = await resolveSubledgerRecipient(document)
+    } catch (error) {
+      logger('error', [logPrefix, `Kunne ikke slå opp mottaker for dokument ${document._id}`, error.message])
       documentsThatFailed.push(document._id)
       continue
-    } else if (toProperCase(personData.bostedsadresse?.postnummer) === '9999' || toProperCase(personData.postadresse?.postnummer) === '9999') {
+    }
+
+    if (!recipient) {
+      logger('warn', [logPrefix, `No recipient data found for document with _id: ${document._id}`])
+      documentsThatFailed.push(document._id)
+      continue
+    }
+
+    const csvData = buildSubledgerRow(recipient, document)
+
+    // '9999' is Folkeregisteret's "Ukjent Adresse" - nobody we can post an invoice to, so the row
+    // goes to manual review. Organisations come from BRREG and have no such sentinel.
+    if (!recipient.isOrganisation && recipient.zipCode === '9999') {
       logger('info', [logPrefix, `Person data for document with _id: ${document._id} contains 'Ukjent Adresse', creating CSV document for manual review`])
-      const csvData = {
-        City: toProperCase(personData.bostedsadresse?.poststed || personData.postadresse?.poststed) || null,
-        'Update Level': 2,
-        'Ledger Type Imp': 'AR',
-        // 'Your Ref': `V${new Date().getFullYear()}`, // Removed, this field is shown on every invoice created in Xledger, we dont want that.
-        Notes: `${new Date().getFullYear()}-${addExtraZero(new Date().getMonth() + 1)}`, // Notes can include additional information about the user, in our case it will be the year the student or the parent is imported.
-        UUID: document._id,
-        // 'Contract': `${toProperCase(document.unSignedskjemaInfo.kontraktType)}-${new Date().getFullYear()}` || null, // Removed, this field is shown on every invoice created in Xledger, we dont want that.
-        CompanyNo: (personData.foedselsEllerDNummer || document.ansvarligInfo.fnr) || null,
-        Description: toProperCase(personData.fulltnavn) || null,
-        'Street Address': toProperCase(personData.bostedsadresse?.gateadresse || personData.postadresse?.gateadresse) || null,
-        'Zip Code': toProperCase(personData.bostedsadresse?.postnummer || personData.postadresse?.postnummer) || null,
-        City: toProperCase(personData.bostedsadresse?.poststed || personData.postadresse?.poststed) || null,
-        Phone: krrData.kontaktinformasjon?.mobiltelefonnummer || null,
-        'E-mail': krrData.kontaktinformasjon?.epostadresse || null,
-        'End Of Line': 'x' // End of line
-      }
       csvDataArrayForManualReview.push(csvData)
     } else {
-      logger('info', [logPrefix, `Fetched person data for document with _id: ${document._id}`])
-      const csvData = {
-        City: toProperCase(personData.bostedsadresse?.poststed || personData.postadresse?.poststed) || null,
-        'Update Level': 2,
-        'Ledger Type Imp': 'AR',
-        // 'Your Ref': `V${new Date().getFullYear()}`,
-        Notes: `${new Date().getFullYear()}-${addExtraZero(new Date().getMonth() + 1)}`, // Notes can include additional information about the user, in our case it will be the year the student or the parent is imported.
-        UUID: document._id,
-        // 'Contract': `${toProperCase(document.unSignedskjemaInfo.kontraktType)}-${new Date().getFullYear()}` || null,
-        CompanyNo: (personData.foedselsEllerDNummer || document.ansvarligInfo.fnr) || null,
-        Description: toProperCase(personData.fulltnavn) || null,
-        'Street Address': toProperCase(personData.bostedsadresse?.gateadresse || personData.postadresse?.gateadresse) || null,
-        'Zip Code': toProperCase(personData.bostedsadresse?.postnummer || personData.postadresse?.postnummer) || null,
-        City: toProperCase(personData.bostedsadresse?.poststed || personData.postadresse?.poststed) || null,
-        Phone: krrData.kontaktinformasjon?.mobiltelefonnummer || null,
-        'E-mail': krrData.kontaktinformasjon?.epostadresse || null,
-        'End Of Line': 'x' // End of line
-      }
+      logger('info', [logPrefix, `Fetched recipient data for document with _id: ${document._id}`])
       csvDataArray.push(csvData)
     }
   }
@@ -366,5 +437,7 @@ const createCsvDataArray = async () => {
 }
 
 module.exports = {
-  createCsvDataArray
+  createCsvDataArray,
+  resolveSubledgerRecipient,
+  buildSubledgerRow
 }

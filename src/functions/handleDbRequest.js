@@ -1,7 +1,8 @@
 const { app } = require('@azure/functions')
 const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument, VALID_MOVE_TARGET_COLLECTIONS, VALID_MOVE_SOURCE_COLLECTIONS } = require('../lib/jobs/queryMongoDB')
 const { validateRoles } = require('../lib/auth/validateRoles')
-const { archiveDocument } = require('../lib/jobs/queryArchive')
+const { assertManualContractAllowed } = require('../lib/auth/assertManualContractAllowed')
+const { archiveDocument, ArchiveLookupError } = require('../lib/jobs/queryArchive')
 const { getUnsettledInvoices, describeInvoice } = require('../lib/jobs/invoiceChecks')
 const { logger } = require('@vtfk/logger')
 const { ObjectId } = require('mongodb')
@@ -74,33 +75,85 @@ app.http('handleDbRequest', {
             // Check if the posted document is a manual contract.
             if (jsonBody.isManual) {
               logger('info', [logPrefix, 'Mottok et manuelt kontraktsdokument'])
-              // Archive the manual contract
-              logger('info', [logPrefix, 'Arkiverer manuelt kontraktsdokument'])
+
+              /**
+               * Fiktivt fnr, en organisasjon som ansvarlig og manuelt valgt skole er forbeholdt
+               * administratorer. Sjekkes HER, før arkivering - et avslag etterpå ville etterlatt et
+               * dokument i P360 for en kontrakt som aldri ble opprettet.
+               */
+              const isAdmin = validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])
+              const refusal = await assertManualContractAllowed(jsonBody, isAdmin)
+              if (refusal) {
+                logger('error', [`${logPrefix} - POST`, 'Manuell kontrakt avvist', refusal.reason])
+                return { status: refusal.status, jsonBody: { error: refusal.error, reason: refusal.reason } }
+              }
+
               let archive
-              try {
-                archive = await archiveDocument(jsonBody)
-                /**
-                 * Example of the archive object that should be returned from the archiveDocument function
-                 * archive = {
-                 *     Recno: 201202,
-                 *     DocumentNumber: '23/00077-60',
-                 *     ImportedDocumentNumber: null,
-                 *     UID: '38cffcb5-77b7-4d9a-adf2-c669f57bb33e',
-                 *     UIDOrigin: '360'
-                 * }
-                 */
-              } catch (error) {
-                logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
-                throw new Error('Internal server error', error)
+              if (isMock === true) {
+                // Archiving is the irreversible half, so a mock run must not reach it at all.
+                // The stub needs a DocumentNumber - postManualContract refuses without one.
+                logger('info', [logPrefix, 'Mock-kontrakt - hopper over arkivering, ingenting skrives til P360'])
+                archive = {
+                  Recno: 0,
+                  DocumentNumber: 'MOCK-00000-0',
+                  ImportedDocumentNumber: null,
+                  UID: crypto.randomUUID(),
+                  UIDOrigin: 'mock'
+                }
+              } else {
+                // Archive the manual contract
+                logger('info', [logPrefix, 'Arkiverer manuelt kontraktsdokument'])
+                try {
+                  archive = await archiveDocument(jsonBody)
+                  /**
+                   * Example of the archive object that should be returned from the archiveDocument function
+                   * archive = {
+                   *     Recno: 201202,
+                   *     DocumentNumber: '23/00077-60',
+                   *     ImportedDocumentNumber: null,
+                   *     UID: '38cffcb5-77b7-4d9a-adf2-c669f57bb33e',
+                   *     UIDOrigin: '360'
+                   * }
+                   */
+                } catch (error) {
+                  logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
+                  /**
+                   * Three failures, three different people to act. Collapsing them into one 500 is how
+                   * an archive outage tells an admin their valid fnr is wrong.
+                   *
+                   *   404 unknown everywhere      -> the admin checks the number
+                   *   409 elevmappe no saksnummer -> an ARCHIVE ADMINISTRATOR must act in P360
+                   *   502 archive unreachable     -> retry
+                   *
+                   * No contract is created in any of them.
+                   */
+                  if (error instanceof ArchiveLookupError) {
+                    const statusByReason = { 'not-found': 404, 'no-case-number': 409, 'unknown-school': 400 }
+                    return {
+                      status: statusByReason[error.reason] || 400,
+                      jsonBody: { error: error.message, reason: error.reason }
+                    }
+                  }
+                  return {
+                    status: 502,
+                    jsonBody: { error: 'Arkivet kunne ikke nås. Prøv igjen.', reason: 'archive-unavailable' }
+                  }
+                }
               }
               // Create a new document with the provided data that can be used to update the database
               logger('info', [logPrefix, 'Oppretter et manuelt kontraktsdokument som kan postes til databasen'])
               let manualContract
               try {
-                manualContract = await postManualContract(jsonBody, archive)
+                // isMock picks the target collection and skips the duplicate/historical checks.
+                manualContract = await postManualContract(jsonBody, archive, isMock)
               } catch (error) {
                 logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
+              }
+              // postManualContract sets its own status when it refuses (e.g. fiktiv elev, no
+              // ansvarlig). Pass it through rather than reporting 200.
+              if (manualContract?.status && manualContract.status >= 400) {
+                return { status: manualContract.status, jsonBody: { error: manualContract.error, reason: 'invalid-contract' } }
               }
               return { status: 200, jsonBody: manualContract }
             } else {

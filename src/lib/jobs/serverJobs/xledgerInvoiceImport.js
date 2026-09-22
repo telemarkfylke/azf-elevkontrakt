@@ -540,10 +540,14 @@ const updateImportedBuyOutDocument = async (invoiceDocument, orderNo, rateNumber
   }
   const rateIndex = invoiceDocument.rates.indexOf(rateToUpdate) + 1
 
-  // Update the main contract — use 'Fakturert - Utkjøp' to preserve the buyOut-specific status
+  // Update the main contract — re-apply the status the invoice was created with, which for a buyOut
+  // is 'Fakturert - Utkjøp'. createBuyOutInvoice stores it on the invoice because these rails also
+  // carry a plain one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime') whose rate must
+  // read 'Fakturert' — hardcoding the buyout status here would silently relabel it on import.
+  // Invoices created before the field existed have no value and keep the old status.
   const buyOutContractUpdateData = {
     ...updateData,
-    [`fakturaInfo.rate${rateNumber}.status`]: 'Fakturert - Utkjøp'
+    [`fakturaInfo.rate${rateNumber}.status`]: invoiceDocument.rateStatusOnInvoice || 'Fakturert - Utkjøp'
   }
 
   let failure = null
@@ -610,7 +614,11 @@ const updateImportedBuyOutDocument = async (invoiceDocument, orderNo, rateNumber
  *   the recipient is not imported to Xledger. Reported on the Teams card; only buyOut/extraInvoice pass it.
  */
 const generateInvoiceImportFile = async (importType, csvDataArray, options = {}) => {
-  const { skippedNotImportedToXledger = [] } = options
+  /**
+   * dryRun writes the CSV for inspection but stops before the three irreversible steps: the Xledger
+   * upload, the move to finished/, and writing 'Fakturert' back onto invoice and contract.
+   */
+  const { skippedNotImportedToXledger = [], dryRun = false } = options
   // Spread into the Teams payload so only callers that actually pass the option (buyOut/extraInvoice)
   // get the held-back section on their card - normalInvoice gates on the flag in its query instead.
   const skippedSection = Array.isArray(options.skippedNotImportedToXledger) ? { skippedNotImportedToXledger } : {}
@@ -681,6 +689,12 @@ const generateInvoiceImportFile = async (importType, csvDataArray, options = {})
     const filePath = `./src/data/xledger_files/faktura_files/${fileNameForImport}`
     fs.writeFileSync(filePath, csvString, 'utf8')
     logger('info', [logPrefix, `CSV file created at ${filePath}`])
+
+    if (dryRun) {
+      // Left in faktura_files/ rather than finished/, since finished/ means "this went to Xledger".
+      logger('info', [logPrefix, `DRY RUN - stopping before Xledger import and database write-back. Inspect ${filePath}`])
+      continue
+    }
 
     // Import the file to Xledger
     try {
@@ -787,6 +801,12 @@ const generateInvoiceImportFile = async (importType, csvDataArray, options = {})
       }
     }
   }
+  if (dryRun) {
+    // No Teams card: that channel is how people learn invoices went out.
+    logger('info', [logPrefix, `DRY RUN complete for ${importType}. ${csvDataArray.length} row(s) written to file, 0 sent, 0 documents updated.`])
+    return { csvDataArray, updatedCount: 0, failedToUpdate: [], failedContractUpdates: [], skippedNotImportedToXledger, dryRun: true }
+  }
+
   // After processing all batches, send a message to teams with the results of the import and update
   // process (One for each import type). updateCount is what was actually written back, not
   // csvDataArray.length - reporting the row count made a batch where every write-back failed look

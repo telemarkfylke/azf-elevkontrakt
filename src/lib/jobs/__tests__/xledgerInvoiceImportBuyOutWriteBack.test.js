@@ -180,3 +180,47 @@ describe('updateImportedBuyOutDocument - reporting', () => {
     assert.equal(invoiceWrites()[0].updateData['rates.0.status'], undefined, 'must not touch the already-paid rate')
   })
 })
+
+// =====================================================================================
+// rateStatusOnInvoice
+//
+// The import writes the contract's rate a SECOND time, after Xledger has the row. It used to
+// hardcode 'Fakturert - Utkjøp', which was right while a buyout was the only thing on these rails.
+// A one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime') travels the same rails and must
+// stay 'Fakturert' - so the status the invoice was created with is read back off the invoice.
+// =====================================================================================
+
+describe('updateImportedBuyOutDocument - rateStatusOnInvoice', () => {
+  test('an invoice written before the field existed still gets the buyOut status', async () => {
+    const { contractWrites, deps } = makeDeps()
+    const invoice = makeInvoice()
+    assert.equal(invoice.rateStatusOnInvoice, undefined, 'fixture must not carry the field')
+
+    await updateImportedBuyOutDocument(invoice, ORDER_NO, 2, UPDATE_DATA, deps)
+
+    assert.equal(contractWrites()[0].updateData['fakturaInfo.rate2.status'], 'Fakturert - Utkjøp')
+  })
+
+  test("an invoice carrying 'Fakturert' is not relabelled as a buyout on import", async () => {
+    const { contractWrites, deps } = makeDeps()
+    await updateImportedBuyOutDocument(makeInvoice({ rateStatusOnInvoice: 'Fakturert' }), ORDER_NO, 2, UPDATE_DATA, deps)
+
+    assert.equal(contractWrites()[0].updateData['fakturaInfo.rate2.status'], 'Fakturert')
+  })
+
+  test("an invoice explicitly carrying the buyOut status keeps it", async () => {
+    const { contractWrites, deps } = makeDeps()
+    await updateImportedBuyOutDocument(makeInvoice({ rateStatusOnInvoice: 'Fakturert - Utkjøp' }), ORDER_NO, 2, UPDATE_DATA, deps)
+
+    assert.equal(contractWrites()[0].updateData['fakturaInfo.rate2.status'], 'Fakturert - Utkjøp')
+  })
+
+  test('the status is echoed in refusedUpdate when the contract write fails, so the manual fix applies the right one', async () => {
+    const { deps } = makeDeps({ updateResult: { acknowledged: true, matchedCount: 0, modifiedCount: 0 } })
+    const result = await updateImportedBuyOutDocument(makeInvoice({ rateStatusOnInvoice: 'Fakturert' }), ORDER_NO, 2, UPDATE_DATA, deps)
+
+    assert.equal(result.contractUpdated, false)
+    assert.equal(result.failure.refusedUpdate['fakturaInfo.rate2.status'], 'Fakturert')
+    assert.equal(result.invoiceUpdated, true, 'the invoice write always happens - rule 1')
+  })
+})

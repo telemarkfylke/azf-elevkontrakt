@@ -5,6 +5,8 @@ const { getMongoClient } = require('../auth/mongoClient.js')
 const { mongoDB } = require('../../../config')
 // const { getSchoolyear } = require("../helpers/getSchoolyear")
 const { fillDocument, fillManualDocument } = require('../documentSchema.js')
+const { readElevMappe } = require('./queryArchive.js')
+const { lookupEnhet } = require('./queryBrreg.js')
 const { checkIsDuplicate, findLatestHistoricalContract, applyHistoricalFakturaInfo, getFakturaInfoMismatches } = require('./contractChecks.js')
 const { invoiceQueryForContractIds } = require('./invoiceQueries.js')
 const { patchUser } = require('./queryPureservice')
@@ -357,9 +359,17 @@ const updateContractPCStatus = async (contract, isMock, targetCollection) => {
   return result
 }
 
-const postManualContract = async (contract, archiveData, isMock) => {
+const postManualContract = async (contract, archiveData, isMock, deps = {}) => {
+  const {
+    getMongoClient: _getMongoClient = getMongoClient,
+    student: _student = student,
+    person: _person = person,
+    readElevMappe: _readElevMappe = readElevMappe,
+    lookupEnhet: _lookupEnhet = lookupEnhet,
+    fillManualDocument: _fillManualDocument = fillManualDocument
+  } = deps
+
   const logPrefix = 'postManualContract'
-  const mongoClient = await getMongoClient()
 
   // Valider contract
   if (!contract) {
@@ -370,44 +380,121 @@ const postManualContract = async (contract, archiveData, isMock) => {
     logger('error', [logPrefix, 'Mangler archiveData eller DocumentNumber'])
     return { status: 400, error: 'Mangler archiveData eller DocumentNumber' }
   }
+
+  const mongoClient = await _getMongoClient()
   let elevData
   let ansvarligData
+  let organisasjonData
   const error = []
+
+  const isOrgAnsvarlig = contract.ansvarligType === 'organisasjon'
+  const isFiktivElev = contract.elevFnrType === 'fiktiv'
+
+  /**
+   * A fiktivt fnr cannot be invoiced, so it can never be the ansvarlig. That makes the "eleven er
+   * ansvarlig selv" fallback below unsafe here - it would make the fiktiv identifier the invoice
+   * recipient and the invoice would wait forever for an Xledger customer that cannot exist.
+   *
+   * So a fiktiv elev always needs a separate ansvarlig regardless of age. Rejected rather than
+   * half-created: no repair job can invent a payer after the fact.
+   */
+  if (isFiktivElev && !isOrgAnsvarlig && !contract.foresattFnr) {
+    logger('error', [logPrefix, 'Fiktivt fødselsnummer uten ansvarlig', `fnr: ${maskFnr(contract.fnr)}`])
+    return {
+      status: 400,
+      error: 'En elev med fiktivt fødselsnummer må ha en ansvarlig med ordinært fødselsnummer eller organisasjonsnummer, også når eleven er over 18 år'
+    }
+  }
 
   if (isMock !== true) {
     if (contract.fnr) {
-      // Hent mer info om eleven
-      elevData = await student(contract.fnr)
+      // Treffer vanligvis også for fiktive fnr - de ligger i FINT som alle andre, det er FREG de mangler.
+      elevData = await _student(contract.fnr)
       logger('info', [logPrefix, 'Henter data om elev, manuell kontrakt'])
       if (elevData.status === 404) {
-        logger('info', [logPrefix, 'Elev ikke funnet i FINT, sjekker FREG'])
-        elevData = await person(contract.fnr)
-        if (elevData?.foedselsEllerDNummer == null) {
-          logger('info', [logPrefix, 'Elev ikke funnet i FREG'])
-          error.push({ error: 'Elev ikke funnet', fnr: contract.fnr })
+        if (isFiktivElev) {
+          // Uvanlig sti. FREG har ingenting på et fiktivt fnr, så navnet hentes fra arkivet -
+          // ellers ville elevInfo.navn blitt 'Ukjent' i kontraktoversikten.
+          logger('info', [logPrefix, 'Elev med fiktivt fnr ikke funnet i FINT, henter navn fra arkivet'])
+          try {
+            const arkiv = await _readElevMappe(contract.fnr)
+            elevData = {
+              navn: arkiv?.privatePerson?.name,
+              fornavn: arkiv?.privatePerson?.firstName,
+              etternavn: arkiv?.privatePerson?.lastName
+            }
+          } catch (archiveError) {
+            /**
+             * Arkivet er siste kilde som kan navngi en fiktiv elev - FINT bommet, FREG har ingenting.
+             * Faller vi gjennom, blir hele elevInfo 'Ukjent', og ingen jobb kan gjette navnet senere.
+             *
+             * 502, ikke 400: et ukjent fiktivt fnr er allerede stoppet i readElevMappe. Her er
+             * nummeret greit og arkivet nede - prøv på nytt.
+             */
+            logger('error', [logPrefix, 'Klarte ikke hente elevdata fra arkivet', archiveError.message])
+            return {
+              status: 502,
+              error: 'Kunne ikke hente elevdata fra arkivet for fiktivt fødselsnummer. Prøv igjen.'
+            }
+          }
         } else {
-          logger('info', [logPrefix, 'Elev ikke funnet i FINT, men vi fant data i FREG'])
-          error.push({ error: 'Elev ikke funnet i FINT, men vi fant data i FREG', fnr: contract.fnr })
+          logger('info', [logPrefix, 'Elev ikke funnet i FINT, sjekker FREG'])
+          elevData = await _person(contract.fnr)
+          if (elevData?.foedselsEllerDNummer == null) {
+            logger('info', [logPrefix, 'Elev ikke funnet i FREG'])
+            error.push({ error: 'Elev ikke funnet', fnr: contract.fnr })
+          } else {
+            logger('info', [logPrefix, 'Elev ikke funnet i FINT, men vi fant data i FREG'])
+            error.push({ error: 'Elev ikke funnet i FINT, men vi fant data i FREG', fnr: contract.fnr })
+          }
         }
       }
     }
 
-    if (contract.foresattFnr !== '') {
+    if (isOrgAnsvarlig) {
+      /**
+       * Organisasjoner finnes ikke i FREG, så navnet hentes fra Enhetsregisteret i stedet for å
+       * stole på ansvarligNavn fra forespørselen - navnet havner på fakturaen. Cachet (24 t).
+       *
+       * Arkiveringen har allerede bevist at organisasjonen finnes, så et feilet oppslag her faller
+       * tilbake på navnet fra skjemaet og noterer at det er uverifisert, heller enn å miste kontrakten.
+       */
+      logger('info', [logPrefix, `Ansvarlig er en organisasjon (${contract.foresattFnr}), hopper over FREG-oppslag`])
+      try {
+        organisasjonData = await _lookupEnhet(contract.foresattFnr)
+        if (!organisasjonData) {
+          logger('warn', [logPrefix, `Fant ikke organisasjon ${contract.foresattFnr} i Enhetsregisteret`])
+          error.push({ error: 'Fant ikke organisasjonen i Enhetsregisteret, bruker navnet fra skjemaet', fnr: contract.foresattFnr })
+        }
+      } catch (brregError) {
+        logger('error', [logPrefix, 'Oppslag mot Enhetsregisteret feilet, bruker navnet fra skjemaet', brregError.message])
+        error.push({ error: 'Kunne ikke verifisere organisasjonsnavnet mot Enhetsregisteret', fnr: contract.foresattFnr })
+      }
+    } else if (contract.foresattFnr !== '') {
       // Hent mer info om ansvarlig
       logger('info', [logPrefix, 'Henter data om ansvarlig'])
-      ansvarligData = await person(contract.foresattFnr)
+      ansvarligData = await _person(contract.foresattFnr)
     } else {
       logger('info', [logPrefix, 'Ingen foresatt oppgitt for manuell kontrakt, ansvarlig er da eleven selv'])
-      ansvarligData = await person(contract.fnr)
+      ansvarligData = await _person(contract.fnr)
     }
-    if (ansvarligData?.foedselsEllerDNummer == null) {
+
+    if (!isOrgAnsvarlig && ansvarligData?.foedselsEllerDNummer == null) {
       // Ansvarlig er ikke funnet i FREG
       logger('info', [logPrefix, 'Ansvarlig ikke funnet i FREG'])
       error.push({ error: 'Ansvarlig ikke funnet i FREG', fnr: contract.foresattFnr || contract.fnr })
     }
   }
-  // Fyll ut dokumentet med data
-  let document = fillManualDocument(contract, archiveData, elevData, ansvarligData, error)
+  /**
+   * Fyll ut dokumentet med data. For en organisasjon byttes ansvarligNavn ut med det
+   * Enhetsregisteret svarte - her, ikke i fillManualDocument, som ikke skal gjøre oppslag.
+   * ansvarligEpost røres ikke: saksbehandlers fakturaadresse slår BRREGs firmapost (se
+   * resolveSubledgerRecipient).
+   */
+  const contractForDocument = organisasjonData?.navn
+    ? { ...contract, ansvarligNavn: organisasjonData.navn }
+    : contract
+  let document = _fillManualDocument(contractForDocument, archiveData, elevData, ansvarligData, error)
 
   // Sjekk for duplikater og historisk fakturaInfo (hoppes over for mock-data)
   if (isMock !== true) {

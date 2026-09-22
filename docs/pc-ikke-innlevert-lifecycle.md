@@ -193,6 +193,7 @@ Documents in this collection are **not** frozen. Several jobs keep writing to th
 | `updatePCStatus` | HTTP, called by Pureservice | `pcInfo.*` (falls back to this collection when the contract isn't in `kontrakter`) |
 | `handleDbRequest` PUT | HTTP, admin UI | `pcInfo.*` via `updateContractPCStatus`, or arbitrary fields via `updateDocument` |
 | `markCherwellPcReturns` | manual, `devTesting.js` | one-off `pcInfo.returned` backfill from a Cherwell export |
+| `bulkInvoiceFromFile` | HTTP, admin uploads a CSV | `pcInfo.boughtOut` plus a buyout invoice for every remaining unpaid rate, for a whole list of students at once - see `bulk-invoice-from-file.md` |
 
 Every `pcInfo` write goes through `updateContractPCStatus` (`src/lib/jobs/queryMongoDB.js`),
 never a hand-rolled `$set`: `pcInfo` is a state machine, and that function is the single place
@@ -332,3 +333,4 @@ Example dry-run response:
 | `src/lib/jobs/serverJobs/miscCleanUpJobs.js` | `repairInvoiceCollectionSource` - repairs stale invoice pointers (`repairBuyOutInvoiceStatuses` is retired) |
 | `src/functions/handleDbRequest.js` | The manual, admin-UI-driven move (`DELETE`), now invoice-gated |
 | `docs/pureservice-asset-lifecycle.md` | The job that backfills `pcInfo` here from Pureservice |
+| `docs/bulk-invoice-from-file.md` | Bulk-invoicing the remaining rates for a list of students, which is what makes a batch of these contracts eligible to leave |

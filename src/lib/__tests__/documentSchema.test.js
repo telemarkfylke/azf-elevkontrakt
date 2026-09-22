@@ -5,6 +5,7 @@ const assert = require('node:assert/strict')
 const {
   getBillingYear,
   buildFreshFakturaInfo,
+  withIdentifierDefaults,
   fillDocument,
   fillManualDocument,
   digitrollImportDocument
@@ -392,6 +393,7 @@ describe('fillDocument', () => {
       upn: 'test.elev@skole.telemarkfylke.no',
       fnr: '12345678901',
       elevnr: 'E12345',
+      fnrType: 'ordinær',
       skole: 'Skien videregående skole',
       klasse: '1STA',
       trinn: 'VG1'
@@ -472,7 +474,7 @@ describe('fillDocument', () => {
   test('builds ansvarligInfo with the name from FREG and the fnr from the form', () => {
     const document = fillDocument(makeFormInfo(), makeElevData(), makeAnsvarligData(), [])
 
-    assert.deepEqual(document.ansvarligInfo, { navn: 'Test Foresatt', fnr: '10987654321' })
+    assert.deepEqual(document.ansvarligInfo, { navn: 'Test Foresatt', fnr: '10987654321', type: 'person' })
   })
 
   test('leaves ansvarligInfo undefined when no ansvarlig data is given', () => {
@@ -658,7 +660,7 @@ describe('fillManualDocument', () => {
   test('builds ansvarligInfo from the ansvarlig data', () => {
     const document = fillManualDocument(makeManualDocumentData(), {}, makeElevData(), makeAnsvarligData(), [])
 
-    assert.deepEqual(document.ansvarligInfo, { navn: 'Test Foresatt', fnr: '10987654321' })
+    assert.deepEqual(document.ansvarligInfo, { navn: 'Test Foresatt', fnr: '10987654321', type: 'person' })
   })
 
   test('leaves ansvarligInfo undefined when no ansvarlig data is given', () => {
@@ -981,6 +983,7 @@ describe('digitrollImportDocument', () => {
       upn: 'test.elev@skole.telemarkfylke.no',
       fnr: '12345678901',
       elevnr: 'E12345',
+      fnrType: 'ordinær',
       skole: 'Skien videregående skole',
       klasse: '1STA',
       trinn: 'VG1'
@@ -1024,7 +1027,7 @@ describe('digitrollImportDocument', () => {
 
     const document = digitrollImportDocument(documentData, makeAnsvarligData({ fulltnavn: 'FREG Foresatt' }))
 
-    assert.deepEqual(document.ansvarligInfo, { navn: 'Digitroll Foresatt', fnr: '10987654321' })
+    assert.deepEqual(document.ansvarligInfo, { navn: 'Digitroll Foresatt', fnr: '10987654321', type: 'person' })
   })
 
   test('yields an Ukjent ansvarligInfo when no ansvarlig data is given (current behaviour)', () => {
@@ -1034,7 +1037,7 @@ describe('digitrollImportDocument', () => {
 
     const document = digitrollImportDocument(documentData, undefined)
 
-    assert.deepEqual(document.ansvarligInfo, { navn: 'Ukjent', fnr: 'Ukjent' })
+    assert.deepEqual(document.ansvarligInfo, { navn: 'Ukjent', fnr: 'Ukjent', type: 'person' })
   })
 
   test('falls back to Ukjent when the Digitroll foresatt fields are missing', () => {
@@ -1042,6 +1045,162 @@ describe('digitrollImportDocument', () => {
 
     const document = digitrollImportDocument(documentData, makeAnsvarligData())
 
-    assert.deepEqual(document.ansvarligInfo, { navn: 'Ukjent', fnr: 'Ukjent' })
+    assert.deepEqual(document.ansvarligInfo, { navn: 'Ukjent', fnr: 'Ukjent', type: 'person' })
+  })
+})
+
+describe('identifier discriminators — organisasjon and fiktivt fødselsnummer', () => {
+  describe('every builder stamps the fields, so no source can emit a document without them', () => {
+    test('fillDocument (Acos) always gets the defaults — a public form is never an org or fiktiv', () => {
+      const document = fillDocument(makeFormInfo(), makeElevData(), makeAnsvarligData(), [])
+
+      assert.equal(document.ansvarligInfo.type, 'person')
+      assert.equal(document.elevInfo.fnrType, 'ordinær')
+    })
+
+    test('digitrollImportDocument always gets the defaults — a historic import is persons only', () => {
+      const document = digitrollImportDocument(makeDigitrollData({ elevData: { fnr: '12345678901' } }), makeAnsvarligData())
+
+      assert.equal(document.ansvarligInfo.type, 'person')
+      assert.equal(document.elevInfo.fnrType, 'ordinær')
+    })
+
+    test('a digitroll document with no elevData has no elevInfo to stamp, and does not crash', () => {
+      // digitrollImportDocument only builds elevInfo when elevData is present.
+      const document = digitrollImportDocument(makeDigitrollData(), makeAnsvarligData())
+
+      assert.equal(document.elevInfo, undefined)
+      assert.equal(document.ansvarligInfo.type, 'person')
+    })
+
+    test('fillManualDocument gets the defaults when nothing special is asked for', () => {
+      const document = fillManualDocument(makeManualDocumentData(), {}, makeElevData(), makeAnsvarligData(), [])
+
+      assert.equal(document.ansvarligInfo.type, 'person')
+      assert.equal(document.elevInfo.fnrType, 'ordinær')
+    })
+  })
+
+  describe('fillManualDocument with an organisation as ansvarlig', () => {
+    const orgDocumentData = (overrides = {}) => makeManualDocumentData({
+      ansvarligType: 'organisasjon',
+      ansvarligNavn: 'TELEMARK FYLKESKOMMUNE',
+      ansvarligEpost: 'faktura@telemarkfylke.no',
+      foresattFnr: '929882989',
+      ...overrides
+    })
+
+    test('the orgnr lands in ansvarligInfo.fnr — the slot every Xledger CompanyNo builder reads', () => {
+      const document = fillManualDocument(orgDocumentData(), {}, makeElevData(), undefined, [])
+
+      assert.equal(document.ansvarligInfo.fnr, '929882989')
+      assert.equal(document.ansvarligInfo.type, 'organisasjon')
+      assert.equal(document.ansvarligInfo.navn, 'TELEMARK FYLKESKOMMUNE')
+      assert.equal(document.ansvarligInfo.epost, 'faktura@telemarkfylke.no')
+    })
+
+    test('ansvarligInfo is built from the org even when FREG returned nothing', () => {
+      // FREG is never called for an organisation, so ansvarligData is undefined here. The old code
+      // would have left ansvarligInfo undefined entirely and the contract would be unbillable.
+      const document = fillManualDocument(orgDocumentData(), {}, makeElevData(), undefined, [])
+
+      assert.notEqual(document.ansvarligInfo, undefined)
+      assert.equal(document.ansvarligInfo.fnr, '929882989')
+    })
+
+    test('signedBy is the organisation itself, not a person', () => {
+      const document = fillManualDocument(orgDocumentData(), {}, makeElevData(), undefined, [])
+
+      assert.deepEqual(document.signedBy, { navn: 'TELEMARK FYLKESKOMMUNE', fnr: '929882989' })
+    })
+
+    test('a FREG person handed in alongside an org is ignored — the org wins', () => {
+      const document = fillManualDocument(orgDocumentData(), {}, makeElevData(), makeAnsvarligData(), [])
+
+      assert.equal(document.ansvarligInfo.type, 'organisasjon')
+      assert.equal(document.ansvarligInfo.fnr, '929882989')
+      assert.equal(document.signedBy.navn, 'TELEMARK FYLKESKOMMUNE')
+    })
+
+    test('falls back to Ukjent for missing org fields rather than emitting undefined', () => {
+      const document = fillManualDocument(
+        makeManualDocumentData({ ansvarligType: 'organisasjon', foresattFnr: '929882989' }),
+        {}, makeElevData(), undefined, []
+      )
+
+      assert.equal(document.ansvarligInfo.navn, 'Ukjent')
+      assert.equal(document.ansvarligInfo.epost, 'Ukjent')
+    })
+  })
+
+  describe('fillManualDocument with a fiktivt fødselsnummer', () => {
+    test('marks the elev as fiktiv', () => {
+      const document = fillManualDocument(
+        makeManualDocumentData({ elevFnrType: 'fiktiv' }), {}, makeElevData(), makeAnsvarligData(), []
+      )
+
+      assert.equal(document.elevInfo.fnrType, 'fiktiv')
+    })
+
+    test('the ansvarlig stays an ordinary person — a fiktiv fnr can never be the ansvarlig', () => {
+      const document = fillManualDocument(
+        makeManualDocumentData({ elevFnrType: 'fiktiv' }), {}, makeElevData(), makeAnsvarligData(), []
+      )
+
+      assert.equal(document.ansvarligInfo.type, 'person')
+      assert.equal(document.ansvarligInfo.fnr, '10987654321')
+      // No fnrType on ansvarligInfo at all: the field only exists on the elev.
+      assert.equal(Object.hasOwn(document.ansvarligInfo, 'fnrType'), false)
+    })
+
+    test('an org may be the ansvarlig for a fiktiv elev — the two features compose', () => {
+      const document = fillManualDocument(
+        makeManualDocumentData({
+          elevFnrType: 'fiktiv',
+          ansvarligType: 'organisasjon',
+          ansvarligNavn: 'TELEMARK FYLKESKOMMUNE',
+          foresattFnr: '929882989'
+        }),
+        {}, makeElevData(), undefined, []
+      )
+
+      assert.equal(document.elevInfo.fnrType, 'fiktiv')
+      assert.equal(document.ansvarligInfo.type, 'organisasjon')
+      assert.equal(document.ansvarligInfo.fnr, '929882989')
+    })
+
+    test('takes the admin-picked school when FINT supplied no elevforhold', () => {
+      const elevData = makeElevData({ elevforhold: undefined })
+      const document = fillManualDocument(
+        makeManualDocumentData({ elevFnrType: 'fiktiv', schoolName: 'Bø vidaregåande skule' }),
+        {}, elevData, makeAnsvarligData(), []
+      )
+
+      assert.equal(document.elevInfo.skole, 'Bø vidaregåande skule')
+    })
+
+    test('still says Ukjent when neither FINT nor the admin supplied a school', () => {
+      const elevData = makeElevData({ elevforhold: undefined })
+      const document = fillManualDocument(makeManualDocumentData(), {}, elevData, makeAnsvarligData(), [])
+
+      assert.equal(document.elevInfo.skole, 'Ukjent')
+    })
+  })
+
+  describe('withIdentifierDefaults', () => {
+    test('never overwrites values that are already set', () => {
+      const document = withIdentifierDefaults({
+        ansvarligInfo: { type: 'organisasjon' },
+        elevInfo: { fnrType: 'fiktiv' }
+      })
+
+      assert.equal(document.ansvarligInfo.type, 'organisasjon')
+      assert.equal(document.elevInfo.fnrType, 'fiktiv')
+    })
+
+    test('tolerates a document with neither block', () => {
+      assert.deepEqual(withIdentifierDefaults({}), {})
+      assert.equal(withIdentifierDefaults(undefined), undefined)
+    })
   })
 })

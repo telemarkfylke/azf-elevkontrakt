@@ -29,6 +29,10 @@ module.exports = {
     url: process.env.KRR_URL,
     key: process.env.KRR_X_FUNCTIONS_KEY
   },
+  brreg: {
+    url: process.env.BRREG_URL || 'https://data.brreg.no/enhetsregisteret/api',
+    timeout: Number(process.env.BRREG_TIMEOUT_MS) || 10000
+  },
   mongoDB: {
     connectionString: process.env.MONGODB_CONNECTION_STRING,
     dbName: process.env.MONGODB_DB_NAME,

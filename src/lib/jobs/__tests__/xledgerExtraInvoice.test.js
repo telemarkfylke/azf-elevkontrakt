@@ -2,7 +2,7 @@
 
 const { test, describe } = require('node:test')
 const assert = require('node:assert/strict')
-const { handleBuyOutInvoice, handleExtraInvoice, processInvoices } = require('../serverJobs/xledgerExtraInvoice.js')
+const { handleBuyOutInvoice, handleExtraInvoice, processInvoices, buildInvoiceLineText } = require('../serverJobs/xledgerExtraInvoice.js')
 
 // ---- Helpers ---------------------------------------------------------------
 
@@ -663,13 +663,16 @@ describe('isImportedToXledger gate', () => {
   })
 
   test('an empty skip list is still passed on, so the Teams card can report 0', async () => {
+    // dryRun rides along in the same options object and defaults to false, so a normal run is
+    // unaffected - asserted explicitly here because this is the flag that decides whether real
+    // invoices get sent.
     const captured = {}
     await handleExtraInvoice([makeExtraInvoice()], makeCapturingDeps({ ...makeExtraDeps(null) }, [], captured))
-    assert.deepEqual(captured.options, { skippedNotImportedToXledger: [] })
+    assert.deepEqual(captured.options, { skippedNotImportedToXledger: [], dryRun: false })
 
     const buyOutCaptured = {}
     await handleBuyOutInvoice([makeBuyOutInvoice()], makeCapturingDeps({ ...makeStandardDeps(null) }, [], buyOutCaptured))
-    assert.deepEqual(buyOutCaptured.options, { skippedNotImportedToXledger: [] })
+    assert.deepEqual(buyOutCaptured.options, { skippedNotImportedToXledger: [], dryRun: false })
   })
 
   test('an invoice-flow exception still takes precedence over the import gate', async () => {
@@ -753,5 +756,101 @@ describe('processInvoices', () => {
     assert.equal(alerts.length, 2)
     assert.ok(alerts.some(a => a.type === 'buyOut' && a.error === 'boom-buyout'))
     assert.ok(alerts.some(a => a.type === 'extraInvoice' && a.error === 'boom-extra'))
+  })
+})
+
+// =====================================================================================
+// buildInvoiceLineText
+//
+// 'Tekst (imp)' is the sentence printed on the invoice line the recipient actually pays against, so
+// it matters more than the internal rate status, not less. These rails now carry both a real buyout
+// and a one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime'), and telling a guardian
+// their PC was "kjøpt ut" when it was not would be wrong on the document itself.
+// =====================================================================================
+
+describe('buildInvoiceLineText', () => {
+  const invoice = (overrides = {}) => ({
+    student: { navn: 'Ola Nordmann' },
+    rates: [{ løpenummer: 'a' }, { løpenummer: 'b' }],
+    ...overrides
+  })
+
+  test('a buyout keeps its existing wording, counter and all - byte for byte as before', () => {
+    assert.equal(buildInvoiceLineText(invoice(), 0), 'Faktura for Ola Nordmann - Utkjøp av elev-PC - Faktura 1/2')
+    assert.equal(buildInvoiceLineText(invoice(), 1), 'Faktura for Ola Nordmann - Utkjøp av elev-PC - Faktura 2/2')
+  })
+
+  test('a single-rate buyout is unchanged too', () => {
+    assert.equal(buildInvoiceLineText(invoice({ rates: [{ løpenummer: 'a' }] }), 0), 'Faktura for Ola Nordmann - Utkjøp av elev-PC - Faktura 1/1')
+  })
+
+  test("a stored label replaces the buyout wording entirely - no 'Utkjøp' anywhere", () => {
+    const text = buildInvoiceLineText(invoice({ invoiceLineLabel: 'Leie av elev-PC', rates: [{ løpenummer: 'a' }] }), 0)
+    assert.equal(text, 'Faktura for Ola Nordmann - Leie av elev-PC')
+    assert.doesNotMatch(text, /Utkjøp/, 'a termin invoice must never say the PC was bought out')
+  })
+
+  test('the labelled wording matches what the nightly rent invoice prints (xledgerInvoiceImport.js)', () => {
+    assert.equal(
+      buildInvoiceLineText(invoice({ invoiceLineLabel: 'Leie av elev-PC', rates: [{ løpenummer: 'a' }] }), 0),
+      'Faktura for Ola Nordmann - Leie av elev-PC'
+    )
+  })
+})
+
+describe('dryRun — the flag standing between a dev-testing call and a real invoice', () => {
+  const { processInvoices } = require('../serverJobs/xledgerExtraInvoice.js')
+
+  /** Records what each layer was asked to do, without doing any of it. */
+  const makeSpy = () => {
+    const seen = { generateOptions: [], handlerOptions: [] }
+    return { seen }
+  }
+
+  test('processInvoices forwards dryRun down to BOTH handlers', async () => {
+    const { seen } = makeSpy()
+    await processInvoices({
+      dryRun: true,
+      getDocuments: async () => ({
+        status: 200,
+        result: [{ _id: 'a', type: 'buyOut' }, { _id: 'b', type: 'extraInvoice' }]
+      }),
+      handleBuyOutInvoice: async (invoices, opts) => { seen.handlerOptions.push(['buyOut', opts]); return {} },
+      handleExtraInvoice: async (invoices, opts) => { seen.handlerOptions.push(['extraInvoice', opts]); return {} },
+      logger: () => {}
+    })
+
+    assert.deepEqual(seen.handlerOptions, [
+      ['buyOut', { dryRun: true }],
+      ['extraInvoice', { dryRun: true }]
+    ])
+  })
+
+  test('defaults to false, so the scheduled job and runExtraInvoiceImport are unaffected', async () => {
+    const { seen } = makeSpy()
+    await processInvoices({
+      getDocuments: async () => ({ status: 200, result: [{ _id: 'a', type: 'buyOut' }] }),
+      handleBuyOutInvoice: async (invoices, opts) => { seen.handlerOptions.push(opts); return {} },
+      handleExtraInvoice: async () => ({}),
+      logger: () => {}
+    })
+
+    assert.deepEqual(seen.handlerOptions, [{ dryRun: false }])
+  })
+
+  test('the handlers pass dryRun on to the file generator, where the side effects live', async () => {
+    const captured = {}
+    await handleExtraInvoice(
+      [makeExtraInvoice()],
+      { ...makeExtraDeps(null), dryRun: true, generateInvoiceImportFile: async (type, csv, options) => { captured.options = options; return {} } }
+    )
+    assert.equal(captured.options.dryRun, true)
+
+    const buyOutCaptured = {}
+    await handleBuyOutInvoice(
+      [makeBuyOutInvoice()],
+      { ...makeStandardDeps(null), dryRun: true, generateInvoiceImportFile: async (type, csv, options) => { buyOutCaptured.options = options; return {} } }
+    )
+    assert.equal(buyOutCaptured.options.dryRun, true)
   })
 })
