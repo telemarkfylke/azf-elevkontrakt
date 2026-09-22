@@ -104,6 +104,16 @@ const lookupEnhet = async (orgnr) => {
     throw new Error(`Kunne ikke nå Enhetsregisteret: ${error.message}`)
   }
 
+  /**
+   * Misses are cached for the full 24 h too, deliberately - a mistyped orgnr should not re-query
+   * BRREG on every keystroke of a retry.
+   *
+   * The consequence is worth knowing when someone reports "this valid orgnr says not-found, but
+   * BRREG's own site knows it": an organisation registered AFTER the first lookup here stays
+   * negative until the entry expires. Accepted - the admin can wait a day - but it is invisible
+   * from the outside and nothing in the logs distinguishes it from a genuine miss.
+   * clearCache(orgnr) forces a re-read if it cannot wait.
+   */
   cache.set(orgnr, result)
   logger('info', [logPrefix, result ? `Fant ${result.kilde} ${orgnr}` : `Fant ikke orgnr ${orgnr}`])
   return result
