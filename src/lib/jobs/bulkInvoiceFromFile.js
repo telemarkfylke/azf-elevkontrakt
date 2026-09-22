@@ -246,6 +246,17 @@ const findPendingBuyOutInvoices = async (contractId, getDocumentsFn) => {
 
 /**
  * Every exit path returns this same key set, so a caller never has to null-check a bucket.
+ *
+ * **This report is personal data by design, and deliberately unmasked.** `notFound`, `multiMatch`
+ * and `skipped` carry real fødselsnumre because the whole point is that an admin can match entries
+ * back to the rows of the file they just uploaded; maskFnr here would make the report useless for
+ * the one job it has. The endpoint is gated on elevkontrakt.administrator-readwrite accordingly.
+ * That is a decision, not an oversight - the logs a few lines down DO mask, and the difference is
+ * intentional.
+ *
+ * `invalidRows` is the exception: it identifies a bad row by line number and the offending cell
+ * only, never the whole row. The rest of the row is the admin's own file and tells them nothing
+ * they did not already have.
  */
 const emptyReport = (overrides = {}) => ({
   dryRun: true,
@@ -376,18 +387,21 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
   // become two invoicing attempts on the same contract.
   const fnrList = []
   const seenFnr = new Set()
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     const rawFnr = row[fnrColumn]
     const fnr = normalizeStudentFnr(rawFnr)
+    // +2 puts this on the line number the admin sees in Excel: +1 for the header, +1 for 1-based rows.
+    const line = index + 2
     if (!fnr) {
       report.invalidRows.push({
-        row,
+        line,
+        value: rawFnr,
         reason: looksLikeScientificNotation(rawFnr) ? 'fnr-lost-to-excel-formatting' : 'invalid-fnr'
       })
       continue
     }
     if (seenFnr.has(fnr)) {
-      report.invalidRows.push({ row, reason: 'duplicate-fnr-in-file' })
+      report.invalidRows.push({ line, value: fnr, reason: 'duplicate-fnr-in-file' })
       continue
     }
     seenFnr.add(fnr)

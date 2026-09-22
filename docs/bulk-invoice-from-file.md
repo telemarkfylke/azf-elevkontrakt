@@ -173,7 +173,7 @@ Every exit path returns the same key set, so a caller never has to null-check a 
                     "reason": "duplicate-faktureringsår" }],
   "multiMatch":  [{ "fnr": "...", "navn": "...", "contracts": [{ "contractId": "...", "documentType": "regular" }] }],
   "notFound":    [{ "fnr": "..." }],
-  "invalidRows": [{ "row": { }, "reason": "invalid-fnr" }],
+  "invalidRows": [{ "line": 12, "value": "1,01011E+10", "reason": "fnr-lost-to-excel-formatting" }],
   "errors":      [{ "fnr": "...", "contractId": "...", "stage": "createBuyOutInvoice", "error": "..." }],
   "totals":      { "contracts": 0, "rates": 0, "sum": 0 },
   "fatal": null
@@ -196,6 +196,8 @@ whole student or just one rate. Reason is `duplicate-faktureringsår` or `missin
 
 `invalidRows[].reason` is `invalid-fnr`, `duplicate-fnr-in-file`, or
 `fnr-lost-to-excel-formatting` (the cell was written as `1,01011E+10`; see [The file](#the-file)).
+`line` is the line number as Excel shows it (header counted), and `value` is the offending cell -
+the rest of the row is not echoed back, since it is the administrator's own file.
 
 `errors[].stage` is `boughtOut-flag` (the flag write failed; the rates were still invoiced) or
 `createBuyOutInvoice`. A student can appear in both `errors` and `invoiced` for the first of those.

@@ -438,6 +438,24 @@ describe('bulkInvoiceFromFile - matching students', () => {
     assert.equal(report.invalidRows[0].reason, 'duplicate-fnr-in-file')
     assert.equal(report.uniqueFnr, 1)
   })
+
+  test('an invalid row is identified by line and cell, without echoing the whole row back', async () => {
+    // The report is admin-only but still personal data; the rest of the row is the admin's own file
+    // and adds nothing, so only the offending cell travels.
+    const { deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] } })
+    const report = await bulkInvoiceFromFile(deps, { csvText: csv('ikke-et-fnr'), mode: 'boughtOut', dryRun: true })
+
+    assert.equal(report.invalidRows[0].value, 'ikke-et-fnr')
+    assert.equal(report.invalidRows[0].line, 2, 'line 1 is the header, so the first data row is 2')
+    assert.equal(report.invalidRows[0].row, undefined, 'the full row must not be echoed back')
+  })
+
+  test('the reported line number points at the offending row, not the first one', async () => {
+    const { deps } = makeDeps({ contracts: { regular: [baseContract()], pcIkkeInnlevert: [] } })
+    const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345', 'ikke-et-fnr'), mode: 'boughtOut', dryRun: true })
+
+    assert.equal(report.invalidRows[0].line, 3)
+  })
 })
 
 describe('bulkInvoiceFromFile - what must never be invoiced', () => {
