@@ -18,7 +18,9 @@ app.http('schools', {
     const logPrefix = 'schools'
     const authorizationHeader = request.headers.get('authorization')
 
-    if (!validateRoles(authorizationHeader, ['elevkontrakt.read', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.administrator-readwrite', 'elevkontrakt.skoleadministrator-write'])) {
+    // Administrator only: this list exists solely to let an administrator pick a school by hand for
+    // a student FINT does not know, which is itself administrator-only.
+    if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
       logger('error', [logPrefix, 'Unauthorized access attempt'])
       return { status: 403, body: 'Forbidden' }
     }

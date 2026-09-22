@@ -1,6 +1,7 @@
 const { app } = require('@azure/functions')
 const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument, VALID_MOVE_TARGET_COLLECTIONS, VALID_MOVE_SOURCE_COLLECTIONS } = require('../lib/jobs/queryMongoDB')
 const { validateRoles } = require('../lib/auth/validateRoles')
+const { assertManualContractAllowed } = require('../lib/auth/assertManualContractAllowed')
 const { archiveDocument, ArchiveLookupError } = require('../lib/jobs/queryArchive')
 const { getUnsettledInvoices, describeInvoice } = require('../lib/jobs/invoiceChecks')
 const { logger } = require('@vtfk/logger')
@@ -74,6 +75,19 @@ app.http('handleDbRequest', {
             // Check if the posted document is a manual contract.
             if (jsonBody.isManual) {
               logger('info', [logPrefix, 'Mottok et manuelt kontraktsdokument'])
+
+              /**
+               * Fiktivt fnr, en organisasjon som ansvarlig og manuelt valgt skole er forbeholdt
+               * administratorer. Sjekkes HER, før arkivering - et avslag etterpå ville etterlatt et
+               * dokument i P360 for en kontrakt som aldri ble opprettet.
+               */
+              const isAdmin = validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])
+              const refusal = await assertManualContractAllowed(jsonBody, isAdmin)
+              if (refusal) {
+                logger('error', [`${logPrefix} - POST`, 'Manuell kontrakt avvist', refusal.reason])
+                return { status: refusal.status, jsonBody: { error: refusal.error, reason: refusal.reason } }
+              }
+
               let archive
               if (isMock === true) {
                 // Archiving is the irreversible half, so a mock run must not reach it at all.

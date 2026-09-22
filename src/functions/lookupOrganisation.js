@@ -20,7 +20,9 @@ app.http('lookupOrganisation', {
     const logPrefix = 'lookupOrganisation'
     const authorizationHeader = request.headers.get('authorization')
 
-    if (!validateRoles(authorizationHeader, ['elevkontrakt.read', 'elevkontrakt.itservicedesk-readwrite', 'elevkontrakt.administrator-readwrite', 'elevkontrakt.skoleadministrator-write'])) {
+    // Administrator only: an organisasjon can only ever appear on a contract as the ansvarlig, and
+    // only an administrator may create such a contract. Nothing else calls this.
+    if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
       logger('error', [logPrefix, 'Unauthorized access attempt'])
       return { status: 403, body: 'Forbidden' }
     }

@@ -38,6 +38,37 @@ app.http('checkIdentifier', {
       return { status: 502, jsonBody: { error: 'Oppslaget feilet. Prøv igjen.', reason: 'lookup-failed' } }
     }
 
+    /**
+     * The role list stays wide - a non-administrator still needs ordinary fnr lookups, for the elev
+     * and for the ansvarlig alike. What is gated is the RESULT they may act on, because the caller
+     * cannot know a number is fiktiv without asking us first. Keeping the rule here rather than in
+     * the frontend means there is one copy of it.
+     */
+    if (result.ok && !validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+      if (result.fnrType === 'fiktiv') {
+        logger('info', [logPrefix, 'Fiktivt fnr avvist for ikke-administrator'])
+        return {
+          status: 403,
+          jsonBody: {
+            ok: false,
+            reason: 'requires-admin',
+            error: 'Dette er et fiktivt fødselsnummer. Bare en administrator kan opprette avtale for en elev med fiktivt fødselsnummer. Ta kontakt med en administrator og oppgi elevens nummer.'
+          }
+        }
+      }
+      if (result.type === 'orgnr') {
+        logger('info', [logPrefix, 'Organisasjonsoppslag avvist for ikke-administrator'])
+        return {
+          status: 403,
+          jsonBody: {
+            ok: false,
+            reason: 'requires-admin',
+            error: 'Bare en administrator kan sette en virksomhet som ansvarlig. Ta kontakt med en administrator hvis avtalen skal faktureres til en virksomhet.'
+          }
+        }
+      }
+    }
+
     if (result.ok) return { status: 200, jsonBody: result }
 
     const statusByReason = {
