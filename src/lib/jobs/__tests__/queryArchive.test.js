@@ -273,6 +273,38 @@ describe('archiveDocument — which party gets synced, and how', () => {
     assert.equal(contactRole(seen.document, 'Avsender').ReferenceNumber, '929882989')
   })
 
+  test('the orgnr is read from foresattFnr — the one identifier slot, shared with the person path', async () => {
+    // There used to be an `|| payload.ansvarligOrgnr` fallback here that nothing in either repo
+    // produced. Its only effect was that a payload using that name archived successfully and then
+    // stored ansvarligInfo.fnr = 'Ukjent', since documentSchema reads foresattFnr alone - an
+    // unbillable contract created without a single error. Pinned so it cannot come back.
+    const { seen, deps } = makeSyncSpies()
+
+    await archiveDocument({
+      ...basePayload,
+      ansvarligType: 'organisasjon',
+      foresattFnr: '929882989',
+      ansvarligOrgnr: '999999999'
+    }, deps)
+
+    assert.deepEqual(seen.enterprise, [{ orgnr: '929882989' }], 'ansvarligOrgnr must be ignored entirely')
+  })
+
+  test('an organisation ansvarlig with no foresattFnr fails instead of archiving', async () => {
+    const { seen, deps } = makeSyncSpies()
+    deps.syncEnterprise = async (orgnr) => {
+      seen.enterprise.push({ orgnr })
+      if (!orgnr) throw new ArchiveLookupError('not-found', 'Fant ikke organisasjonsnummeret i Enhetsregisteret')
+      return { enterprise: { EnterpriseNumber: orgnr } }
+    }
+
+    await assert.rejects(
+      () => archiveDocument({ ...basePayload, ansvarligType: 'organisasjon', ansvarligOrgnr: '929882989' }, deps),
+      (error) => error instanceof ArchiveLookupError && error.reason === 'not-found'
+    )
+    assert.equal(seen.document, null, 'nothing may be archived for an unresolvable ansvarlig')
+  })
+
   test('the school is always the Mottaker and the elev always Kopi til', async () => {
     const { seen, deps } = makeSyncSpies()
 
