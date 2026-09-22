@@ -74,50 +74,73 @@ app.http('handleDbRequest', {
             // Check if the posted document is a manual contract.
             if (jsonBody.isManual) {
               logger('info', [logPrefix, 'Mottok et manuelt kontraktsdokument'])
-              // Archive the manual contract
-              logger('info', [logPrefix, 'Arkiverer manuelt kontraktsdokument'])
               let archive
-              try {
-                archive = await archiveDocument(jsonBody)
+              if (isMock === true) {
                 /**
-                 * Example of the archive object that should be returned from the archiveDocument function
-                 * archive = {
-                 *     Recno: 201202,
-                 *     DocumentNumber: '23/00077-60',
-                 *     ImportedDocumentNumber: null,
-                 *     UID: '38cffcb5-77b7-4d9a-adf2-c669f57bb33e',
-                 *     UIDOrigin: '360'
-                 * }
-                 */
-              } catch (error) {
-                logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
-                /**
-                 * Three failures, three different people to act. Collapsing them into one 500 is how
-                 * an archive outage tells an admin their valid fnr is wrong.
+                 * Archiving is the one irreversible half of this handler, and it used to run even for
+                 * a mock request: `?isMock=true` was honoured by GET, PUT and DELETE but never reached
+                 * this branch, so running the admin UI with VITE_MOCK_DATA=true created REAL documents
+                 * in P360 - and, since archiveDocument gained syncEnterprise, real organisation records
+                 * with them.
                  *
-                 *   404 unknown everywhere      -> the admin checks the number
-                 *   409 elevmappe no saksnummer -> an ARCHIVE ADMINISTRATOR must act in P360
-                 *   502 archive unreachable     -> retry
-                 *
-                 * No contract is created in any of them.
+                 * The stub carries the shape postManualContract requires: it rejects outright when
+                 * archiveData.DocumentNumber is missing, so this cannot be left empty.
                  */
-                if (error instanceof ArchiveLookupError) {
-                  const statusByReason = { 'not-found': 404, 'no-case-number': 409, 'unknown-school': 400 }
-                  return {
-                    status: statusByReason[error.reason] || 400,
-                    jsonBody: { error: error.message, reason: error.reason }
-                  }
+                logger('info', [logPrefix, 'Mock-kontrakt - hopper over arkivering, ingenting skrives til P360'])
+                archive = {
+                  Recno: 0,
+                  DocumentNumber: 'MOCK-00000-0',
+                  ImportedDocumentNumber: null,
+                  UID: crypto.randomUUID(),
+                  UIDOrigin: 'mock'
                 }
-                return {
-                  status: 502,
-                  jsonBody: { error: 'Arkivet kunne ikke nås. Prøv igjen.', reason: 'archive-unavailable' }
+              } else {
+                // Archive the manual contract
+                logger('info', [logPrefix, 'Arkiverer manuelt kontraktsdokument'])
+                try {
+                  archive = await archiveDocument(jsonBody)
+                  /**
+                   * Example of the archive object that should be returned from the archiveDocument function
+                   * archive = {
+                   *     Recno: 201202,
+                   *     DocumentNumber: '23/00077-60',
+                   *     ImportedDocumentNumber: null,
+                   *     UID: '38cffcb5-77b7-4d9a-adf2-c669f57bb33e',
+                   *     UIDOrigin: '360'
+                   * }
+                   */
+                } catch (error) {
+                  logger('error', [logPrefix, 'Error ved arkivering av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
+                  /**
+                   * Three failures, three different people to act. Collapsing them into one 500 is how
+                   * an archive outage tells an admin their valid fnr is wrong.
+                   *
+                   *   404 unknown everywhere      -> the admin checks the number
+                   *   409 elevmappe no saksnummer -> an ARCHIVE ADMINISTRATOR must act in P360
+                   *   502 archive unreachable     -> retry
+                   *
+                   * No contract is created in any of them.
+                   */
+                  if (error instanceof ArchiveLookupError) {
+                    const statusByReason = { 'not-found': 404, 'no-case-number': 409, 'unknown-school': 400 }
+                    return {
+                      status: statusByReason[error.reason] || 400,
+                      jsonBody: { error: error.message, reason: error.reason }
+                    }
+                  }
+                  return {
+                    status: 502,
+                    jsonBody: { error: 'Arkivet kunne ikke nås. Prøv igjen.', reason: 'archive-unavailable' }
+                  }
                 }
               }
               // Create a new document with the provided data that can be used to update the database
               logger('info', [logPrefix, 'Oppretter et manuelt kontraktsdokument som kan postes til databasen'])
               let manualContract
               try {
-                manualContract = await postManualContract(jsonBody, archive)
+                // isMock decides the target collection and whether the duplicate/historical checks
+                // run - postManualContract has always supported it, it was just never passed.
+                manualContract = await postManualContract(jsonBody, archive, isMock)
               } catch (error) {
                 logger('error', [logPrefix, 'Error ved oppretting av manuelt kontraktsdokument', sanitizeErrorForLogging(error)])
                 throw new Error('Internal server error', error)
