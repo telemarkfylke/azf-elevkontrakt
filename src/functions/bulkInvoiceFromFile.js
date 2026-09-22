@@ -41,10 +41,10 @@ app.http('bulkInvoiceFromFile', {
     const authorizationHeader = request.headers.get('authorization')
 
     // Narrowest role that fits: this bills hundreds of students in one call.
-    // if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
-    //   logger('error', [logPrefix, 'Unauthorized access attempt'])
-    //   return { status: 403, body: 'Forbidden' }
-    // }
+    if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+      logger('error', [logPrefix, 'Unauthorized access attempt'])
+      return { status: 403, body: 'Forbidden' }
+    }
 
     let formData
     try {
@@ -97,7 +97,7 @@ app.http('bulkInvoiceFromFile', {
       name: userInfo.displayName ?? claims.name ?? claims.upn ?? 'Ukjent',
       givenName: userInfo.givenName ?? null,
       surname: userInfo.surname ?? null,
-      email: userInfo.userPrincipalName ?? claims.upn ?? null,
+      email: userInfo.userPrincipalName ?? claims.upn ?? null, 
       companyName: userInfo.companyName ?? 'Masseinnfakturering (fil)',
       officeLocation: userInfo.officeLocation ?? null,
       jobTitle: userInfo.jobTitle ?? null
