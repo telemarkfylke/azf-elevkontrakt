@@ -51,8 +51,8 @@ const PRICES = { prices: { regularPrice: 1500, reducedPrice: 500 }, exceptionsFr
  * contract already has an unsent buyOut waiting. It defaults to none, which is the normal case;
  * a test that wants the duplicate guard to fire supplies some.
  */
-const makeDeps = ({ contracts = { regular: [], pcIkkeInnlevert: [] }, invoiceResult = { status: 200, body: 'ok' }, priceList = PRICES, exceptionFnrs = [], pendingInvoices = [] } = {}) => {
-  const calls = { queries: [], invoiceLookups: [], invoices: [], pcStatus: [] }
+const makeDeps = ({ contracts = { regular: [], pcIkkeInnlevert: [] }, invoiceResult = { status: 200, body: 'ok' }, priceList = PRICES, exceptionFnrs = [], pendingInvoices = [], runStoreWrites = true, realRunId = false } = {}) => {
+  const calls = { queries: [], invoiceLookups: [], invoices: [], pcStatus: [], runRecords: [], progressRecords: [], noted: [] }
   return {
     calls,
     deps: {
@@ -78,7 +78,32 @@ const makeDeps = ({ contracts = { regular: [], pcIkkeInnlevert: [] }, invoiceRes
         return typeof invoiceResult === 'function' ? invoiceResult(contract) : invoiceResult
       },
       getThisYearsPriceListFn: async () => priceList,
-      hasInvoiceFlowExceptionFn: (fnr) => exceptionFnrs.includes(fnr)
+      hasInvoiceFlowExceptionFn: (fnr) => exceptionFnrs.includes(fnr),
+      ...(realRunId ? {} : { newRunIdFn: () => 'run-test-1' }),
+      // Records rather than uploads. Deep-cloned so an entry captures the report as it was at that
+      // moment, not as it ended up.
+      createBulkRunStoreFn: (runId) => {
+        let processed = 0
+        return {
+          blobName: `${runId}.json`,
+          progressBlobName: `${runId}.progress.json`,
+          setTotal: (value) => { calls.total = value },
+          advance: () => { processed++ },
+          note: (entry) => calls.noted.push(entry),
+          write: async (status, report) => {
+            calls.runRecords.push({ runId, status, report: structuredClone(report) })
+            return runStoreWrites
+          },
+          writeProgress: async (status, report) => {
+            calls.progressRecords.push({ status, processed, tallies: { invoiced: report.invoiced.length, notFound: report.notFound.length } })
+            return runStoreWrites
+          },
+          tick: async (status, report) => {
+            calls.progressRecords.push({ status, processed, tallies: { invoiced: report.invoiced.length, notFound: report.notFound.length } })
+          },
+          state: () => ({ container: 'test', blobName: `${runId}.json`, persisted: runStoreWrites, failures: runStoreWrites ? 0 : 1, error: runStoreWrites ? null : 'storage down' })
+        }
+      }
     }
   }
 }
@@ -851,5 +876,149 @@ describe('bulkInvoiceFromFile - failures mid-run', () => {
     assert.equal(report.errors[0].stage, 'boughtOut-flag')
     assert.equal(calls.invoices.length, 1)
     assert.equal(report.invoiced.length, 1)
+  })
+})
+
+// =====================================================================================
+// The run record
+// =====================================================================================
+
+/**
+ * A run outlives its HTTP response, so the report naming what was billed can be lost. These assert
+ * the two things that make that survivable: the invoices carry the run, and the record is written
+ * as the run goes rather than only at the end.
+ */
+describe('bulkInvoiceFromFile - the run record', () => {
+  const threeStudents = {
+    regular: [
+      baseContract(),
+      baseContract({ _id: 'contract-2', elevInfo: { fnr: '02020223456', navn: 'Kari Hansen', klasse: '2ELEA' } }),
+      baseContract({ _id: 'contract-3', elevInfo: { fnr: '03030334567', navn: 'Per Olsen', klasse: '2ELEA' } })
+    ],
+    pcIkkeInnlevert: []
+  }
+
+  test('every invoice from one run carries the same bulkRunId, and it is the runId on the report', async () => {
+    for (const mode of ['boughtOut', 'oneTime']) {
+      const { calls, deps } = makeDeps({ contracts: threeStudents })
+      const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345', '02020223456', '03030334567'), mode, dryRun: false })
+
+      assert.equal(calls.invoices.length, 3, mode)
+      assert.ok(calls.invoices.every(invoice => invoice.opts.bulkRunId === report.runId), mode + ': every invoice is stamped with the run')
+      assert.equal(report.runId, 'run-test-1')
+    }
+  })
+
+  test('a supplied runId is used verbatim, so a caller can poll before the run finishes', async () => {
+    const { calls, deps } = makeDeps({ contracts: threeStudents })
+    const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: false, runId: 'supplied-run-id' })
+
+    assert.equal(report.runId, 'supplied-run-id')
+    assert.equal(calls.invoices[0].opts.bulkRunId, 'supplied-run-id')
+  })
+
+  test('two runs without a supplied id get different runIds', async () => {
+    const first = await bulkInvoiceFromFile(makeDeps({ contracts: threeStudents, realRunId: true }).deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: true })
+    const second = await bulkInvoiceFromFile(makeDeps({ contracts: threeStudents, realRunId: true }).deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: true })
+
+    assert.ok(first.runId && second.runId, 'both runs got an id')
+    assert.notEqual(first.runId, second.runId)
+  })
+
+  test('the runId is on the report even when the run is refused outright', async () => {
+    const refusals = [
+      { options: { csvText: csv('01010112345'), mode: 'nonsense' } },
+      { options: { csvText: csv('01010112345'), mode: 'boughtOut', collections: ['historiske-avtaler'] } },
+      { options: { csvText: '', mode: 'boughtOut' } },
+      { options: { csvText: 'navn\nOla', mode: 'boughtOut' } },
+      { options: { csvText: csv('ikke-et-fnr'), mode: 'boughtOut' } },
+      { options: { csvText: csv('01010112345'), mode: 'boughtOut' }, priceList: { prices: {} } }
+    ]
+
+    for (const { options, priceList } of refusals) {
+      const { deps } = makeDeps({ contracts: threeStudents, ...(priceList ? { priceList } : {}) })
+      const report = await bulkInvoiceFromFile(deps, options)
+      assert.ok(report.fatal, 'expected a fatal for ' + JSON.stringify(options.mode))
+      assert.equal(report.runId, 'run-test-1', 'a refused run still names itself')
+    }
+  })
+
+  test('a started record is written before any invoice exists', async () => {
+    const { calls, deps } = makeDeps({ contracts: threeStudents })
+    await bulkInvoiceFromFile(deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: false })
+
+    assert.equal(calls.runRecords[0].status, 'started')
+    assert.equal(calls.runRecords[0].report.invoiced.length, 0)
+    assert.equal(calls.runRecords[0].report.candidateContracts, 1, 'written after the pre-fetch, so it records what the run was about to do')
+    assert.equal(calls.total, 1)
+  })
+
+  test('progress is written as the run proceeds, not only at the end', async () => {
+    const { calls, deps } = makeDeps({ contracts: threeStudents })
+    await bulkInvoiceFromFile(deps, { csvText: csv('01010112345', '02020223456', '03030334567'), mode: 'boughtOut', dryRun: false })
+
+    const duringLoop = calls.progressRecords.filter(entry => entry.status === 'running')
+    assert.equal(duringLoop.length, 3, 'one tick per student')
+    assert.deepEqual(duringLoop.map(entry => entry.processed), [0, 1, 2], 'processed counts the students already finished')
+    assert.equal(calls.progressRecords.at(-1).status, 'completed')
+    assert.equal(calls.progressRecords.at(-1).processed, 3)
+  })
+
+  test('the live feed carries the students who were invoiced', async () => {
+    const { calls, deps } = makeDeps({ contracts: threeStudents })
+    await bulkInvoiceFromFile(deps, { csvText: csv('01010112345', '02020223456'), mode: 'boughtOut', dryRun: false })
+
+    assert.equal(calls.noted.length, 2)
+    assert.deepEqual(calls.noted.map(entry => entry.navn), ['Ola Nordmann', 'Kari Hansen'])
+    assert.ok(calls.noted.every(entry => entry.total > 0))
+  })
+
+  test('the last record says completed and carries the totals the caller got', async () => {
+    const { calls, deps } = makeDeps({ contracts: threeStudents })
+    const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345', '02020223456'), mode: 'boughtOut', dryRun: false })
+
+    const last = calls.runRecords.at(-1)
+    assert.equal(last.status, 'completed')
+    assert.deepEqual(last.report.totals, report.totals)
+    assert.equal(report.totals.contracts, 2)
+  })
+
+  test('a storage failure does not stop the run, and is reported rather than thrown', async () => {
+    const { calls, deps } = makeDeps({ contracts: threeStudents, runStoreWrites: false })
+    const report = await bulkInvoiceFromFile(deps, { csvText: csv('01010112345', '02020223456', '03030334567'), mode: 'boughtOut', dryRun: false })
+
+    assert.equal(calls.invoices.length, 3, 'the students were still billed')
+    assert.equal(report.totals.contracts, 3)
+    assert.equal(report.reportBlob.persisted, false)
+    assert.equal(typeof report.reportBlob.error, 'string')
+  })
+
+  test('a run that comes apart mid-loop records what was billed and still rethrows', async () => {
+    let invoiceLookups = 0
+    const { calls, deps } = makeDeps({ contracts: threeStudents })
+    const inner = deps.getDocumentsFn
+    deps.getDocumentsFn = async (query, documentType) => {
+      if (documentType === 'invoices' && ++invoiceLookups === 2) throw new Error('mongo gikk ned')
+      return inner(query, documentType)
+    }
+
+    await assert.rejects(
+      bulkInvoiceFromFile(deps, { csvText: csv('01010112345', '02020223456', '03030334567'), mode: 'boughtOut', dryRun: false }),
+      /mongo gikk ned/
+    )
+
+    const last = calls.runRecords.at(-1)
+    assert.equal(last.status, 'failed')
+    assert.equal(last.report.fatal.reason, 'run-aborted')
+    assert.equal(last.report.invoiced.length, 1, 'the student billed before the failure is preserved')
+  })
+
+  test('a dry run writes a record but stamps nothing', async () => {
+    const { calls, deps } = makeDeps({ contracts: threeStudents })
+    await bulkInvoiceFromFile(deps, { csvText: csv('01010112345'), mode: 'boughtOut', dryRun: true })
+
+    assert.equal(calls.invoices.length, 0)
+    assert.equal(calls.runRecords.at(-1).report.dryRun, true)
+    assert.equal(calls.runRecords.at(-1).status, 'completed')
   })
 })

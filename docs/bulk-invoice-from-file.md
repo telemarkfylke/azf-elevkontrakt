@@ -1,4 +1,4 @@
-# Masseinnfakturering fra fil
+# Fakturering fra fil
 
 Lets a system administrator upload a CSV of students and invoice every remaining unpaid rate on
 their contracts in one call, with a per-student report of everything that could not be done and why.
@@ -143,7 +143,7 @@ like "none of these students were eligible".
 > the cell in scientific notation - `1,01011E+10` - and the digits are then gone for good; no amount
 > of parsing recovers them. Such rows are reported as `fnr-lost-to-excel-formatting` rather than the
 > generic `invalid-fnr`, and if the whole column is affected the request is refused with
-> `400 no-usable-fnr` and a message naming the fix. Without that distinction the admin gets 775
+> `400 no-usable-fnr` and a message naming the fix. Without that distinction the admin gets a wall of
 > identical `invalid-fnr` rows and no hint that the file simply needs re-saving.
 
 Since the sheet arrives as `.xlsx` and this job takes CSV, save it as **CSV (semikolondelt)**. The
@@ -159,13 +159,14 @@ Every exit path returns the same key set, so a caller never has to null-check a 
 
 ```json
 {
+  "runId": "0f4c9a1e-....",
   "dryRun": true,
   "mode": "boughtOut",
   "collections": ["regular", "pcIkkeInnlevert"],
   "fnrColumn": "fnr",
-  "fileRowCount": 775,
-  "uniqueFnr": 773,
-  "candidateContracts": 741,
+  "fileRowCount": 500,
+  "uniqueFnr": 498,
+  "candidateContracts": 470,
   "invoiced":    [{ "fnr": "...", "navn": "...", "contractId": "...", "documentType": "regular",
                     "rates": [{ "rateKey": "rate2", "faktureringsår": "2026", "sum": 1500 }], "total": 1500 }],
   "skipped":     [{ "fnr": "...", "navn": "...", "contractId": "...", "reason": "no-unpaid-rates" }],
@@ -176,7 +177,9 @@ Every exit path returns the same key set, so a caller never has to null-check a 
   "invalidRows": [{ "line": 12, "value": "1,01011E+10", "reason": "fnr-lost-to-excel-formatting" }],
   "errors":      [{ "fnr": "...", "contractId": "...", "stage": "createBuyOutInvoice", "error": "..." }],
   "totals":      { "contracts": 0, "rates": 0, "sum": 0 },
-  "fatal": null
+  "fatal": null,
+  "reportBlob":  { "container": "bulk-invoice-runs-prod", "blobName": "0f4c9a1e-....json",
+                   "persisted": true, "failures": 0, "error": null }
 }
 ```
 
@@ -209,6 +212,9 @@ the rest of the row is not echoed back, since it is the administrator's own file
 > **The report carries real fødselsnumre; the logs mask them.** The administrator uploaded these
 > numbers and cannot act on a masked one - `notFound` is useless if you cannot tell which student it
 > was. The endpoint is admin-only. Every log line still goes through `maskFnr`.
+>
+> The stored copy in Blob carries them too, which is why that container is private and why the
+> reports expire - see [Watching a run](#watching-a-run).
 
 A `200` is **not** "everything worked". A run where every student failed is still a completed run;
 the per-student buckets are where that shows.
@@ -222,6 +228,60 @@ only on the literal string `false`. Same convention as the `dev/` job routes.
 A dry run does no writes at all - neither `createBuyOutInvoice` nor `updateContractPCStatus` is
 called - but still reports the exact rates and sums that would be billed. Read the report before
 turning writes on.
+
+## Watching a run
+
+1. **Every invoice is stamped with the run.** `invoices.bulkRunId` is written in the same operation
+   that bills the money, so `db.invoices.find({ bulkRunId })` is the authoritative answer to "what
+   did that run bill?" and cannot drift.
+2. **The report is written to Blob as the run goes** - a `started` record before the first invoice,
+   a progress record every ~2 s, the full report every ~30 s and on every terminal path.
+
+### Polling
+
+The caller may generate its own `runId` (a UUID) and send it as a form field. The POST does not
+return until the run is done, so this is what lets a UI poll from the moment it submits. A `runId`
+that has already been used answers `409`; omit the field and the job generates one.
+
+```
+GET /api/invoice/bulkRuns             -> the most recent runs, newest first
+GET /api/invoice/bulkRuns/{runId}     -> progress while running, the full report once finished
+```
+
+Both are administrator-only, like the run itself. While a run is live the answer is the progress
+record:
+
+```json
+{
+  "runId": "0f4c9a1e-....",
+  "status": "running",
+  "processed": 312,
+  "total": 500,
+  "tallies": { "invoiced": 288, "skipped": 21, "notFound": 3, "errors": 0, "sum": 432000 },
+  "recent": [{ "fnr": "...", "navn": "...", "total": 1500 }]
+}
+```
+
+`status` is `started`, `running`, `completed` or `failed`. A record still reading `running` long
+after the fact means the run died partway - reconcile it against `invoices` using its `bulkRunId`.
+
+`recent` is a rolling window of the last 20 **invoiced** students, so the feed shows money moving.
+Everything else is a counter; a `notFound` climbing fast is the signature of a wrong fnr column.
+
+### Retention
+
+Stored reports hold unmasked fødselsnumre, so they expire - 90 days by default
+(`BULK_INVOICE_RUN_RETENTION_DAYS`), swept daily by the `pruneBulkInvoiceRuns` timer.
+
+> **After the window, `GET /api/invoice/bulkRuns/{runId}` answers 404 while
+> `db.invoices.find({ bulkRunId })` still resolves that run forever.** A 404 means the report was
+> cleaned up, not that the run never happened.
+
+### If storage is down
+
+The run still bills. Blob is the convenience copy; the invoices are the record. A failed write is
+logged once as a warning and reported back in `reportBlob.persisted: false` with the reason, so a
+caller can say the copy is missing rather than pretend it exists.
 
 ## The pending-invoice guard
 
@@ -354,6 +414,9 @@ multipart parser and no new dependency.
 |---|---|
 | `src/lib/jobs/bulkInvoiceFromFile.js` | The job. Also exports `detectFnrColumn`, `normalizeStudentFnr`, `selectRatesToInvoice`, `findContractDefect` |
 | `src/functions/bulkInvoiceFromFile.js` | `POST /api/invoice/bulkFromFile`, multipart, role gate, dryRun handling |
+| `src/lib/jobs/bulkRunStore.js` | The durable run record in Blob - progress while running, the full report after |
+| `src/functions/bulkInvoiceRuns.js` | `GET /api/invoice/bulkRuns/{runId?}` - poll a live run, read a finished one |
+| `src/functions/pruneBulkInvoiceRuns.js` | Daily timer enforcing the retention window on stored reports |
 | `src/lib/helpers/readAndParseCSV.js` | `parseCSVString` - extracted so an uploaded file can be parsed without a path on disk |
 | `src/lib/jobs/processInvoices.js` | `createBuyOutInvoice` - the shared invoicing path, and `rateStatusOnInvoice` |
 | `src/lib/jobs/serverJobs/xledgerInvoiceImport.js` | `updateImportedBuyOutDocument` - reads `rateStatusOnInvoice` back on import |

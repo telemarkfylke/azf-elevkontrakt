@@ -35,6 +35,7 @@ const { invoiceQueryForContractIds } = require('./invoiceQueries')
 const { parseCSVString } = require('../helpers/readAndParseCSV')
 const { normalizeIdentifier, detectIdentifierType, FNR_LENGTH } = require('../helpers/identifier')
 const { maskFnr } = require('../helpers/maskFnr')
+const { createBulkRunStore } = require('./bulkRunStore')
 
 /**
  * The contract collections a student can be invoiced in.
@@ -128,7 +129,7 @@ const detectFnrColumn = (headers, override) => {
  * '1,01011E+10'. The digits are gone for good at that point, so the row cannot be salvaged.
  *
  * Detected separately from a plain bad value only so the report can say what to fix. Otherwise all
- * 775 rows come back as 'invalid-fnr' with no hint that the file needs re-saving, which is a
+ * rows come back as 'invalid-fnr' with no hint that the file needs re-saving, which is a
  * genuinely confusing half hour.
  *
  * @param {String|Number} value - the RAW cell value, before normalizeIdentifier strips punctuation
@@ -199,9 +200,6 @@ const selectRatesToInvoice = (contract, mode) => {
 }
 
 /**
- * createBuyOutInvoice walks every rate on the contract calling rate.status.toLowerCase(), so a rate
- * with no status throws before it can reach a match. One malformed contract must not abort a
- * 775-row run, so it is reported here instead.
  * @returns {String|null} - a skip reason, or null when the contract is safe to invoice
  */
 const findContractDefect = (contract) => {
@@ -267,6 +265,7 @@ const findPendingBuyOutInvoices = async (contractId, getDocumentsFn) => {
  * exception - line number and offending cell only, never the whole row.
  */
 const emptyReport = (overrides = {}) => ({
+  runId: null,
   dryRun: true,
   mode: null,
   collections: [],
@@ -286,6 +285,7 @@ const emptyReport = (overrides = {}) => ({
   errors: [],
   totals: { contracts: 0, rates: 0, sum: 0 },
   fatal: null,
+  reportBlob: null,
   ...overrides
 })
 
@@ -333,7 +333,9 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
     getThisYearsPriceListFn = getThisYearsPriceList,
     returnCorrectPriceForStudentFn = returnCorrectPriceForStudent,
     hasInvoiceFlowExceptionFn = hasInvoiceFlowException,
-    parseCSVStringFn = parseCSVString
+    parseCSVStringFn = parseCSVString,
+    newRunIdFn = () => crypto.randomUUID(),
+    createBulkRunStoreFn = createBulkRunStore
   } = deps
 
   const {
@@ -342,18 +344,21 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
     collections = CANDIDATE_COLLECTIONS,
     fnrColumn: fnrColumnOverride,
     dryRun = true,
-    invoiceCreatedBy = {}
+    invoiceCreatedBy = {},
+    runId: suppliedRunId
   } = options
 
   const logPrefix = 'bulkInvoiceFromFile'
+  const runId = suppliedRunId || newRunIdFn()
 
   if (!MODES.includes(mode)) {
-    return emptyReport({ dryRun, fatal: { reason: 'invalid-mode', message: `mode må være en av: ${MODES.join(', ')}` } })
+    return emptyReport({ runId, dryRun, fatal: { reason: 'invalid-mode', message: `mode må være en av: ${MODES.join(', ')}` } })
   }
 
   const invalidCollections = collections.filter(collection => !CANDIDATE_COLLECTIONS.includes(collection))
   if (collections.length === 0 || invalidCollections.length > 0) {
     return emptyReport({
+      runId,
       dryRun,
       mode,
       fatal: {
@@ -368,13 +373,14 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
 
   const rows = parseCSVStringFn(csvText, 'opplastet fil')
   if (rows.length === 0) {
-    return emptyReport({ dryRun, mode, collections, fatal: { reason: 'empty-file', message: 'Fant ingen rader i filen' } })
+    return emptyReport({ runId, dryRun, mode, collections, fatal: { reason: 'empty-file', message: 'Fant ingen rader i filen' } })
   }
 
   const headers = Object.keys(rows[0])
   const fnrColumn = detectFnrColumn(headers, fnrColumnOverride)
   if (!fnrColumn) {
     return emptyReport({
+      runId,
       dryRun,
       mode,
       collections,
@@ -389,7 +395,7 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
     })
   }
 
-  const report = emptyReport({ dryRun, mode, collections, fnrColumn, fileRowCount: rows.length })
+  const report = emptyReport({ runId, dryRun, mode, collections, fnrColumn, fileRowCount: rows.length })
 
   // Normalise and dedupe the file before touching the database. A repeated fnr in the file must not
   // become two invoicing attempts on the same contract.
@@ -432,7 +438,7 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
     }
   }
 
-  logger('info', [logPrefix, `Starter - mode: ${mode}, collections: ${collections.join(',')}, rader: ${rows.length}, unike fnr: ${fnrList.length}, dryRun: ${dryRun}`])
+  logger('info', [logPrefix, `Starter - runId: ${runId}, mode: ${mode}, collections: ${collections.join(',')}, rader: ${rows.length}, unike fnr: ${fnrList.length}, dryRun: ${dryRun}`])
 
   const contractsByFnr = await fetchContractsByFnr(fnrList, collections, getDocumentsFn)
   report.candidateContracts = [...contractsByFnr.values()].reduce((count, entries) => count + entries.length, 0)
@@ -460,130 +466,151 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
   }
   const invoiceFlowExceptions = Array.isArray(exceptionsFromInvoiceFlow?.students) ? exceptionsFromInvoiceFlow : { students: [] }
 
+  const store = createBulkRunStoreFn(runId)
+  store.setTotal(fnrList.length)
+  await store.write('started', report)
+
   // Sequential on purpose. Each contract mints up to three serial numbers and generateSerialNumber
   // is a read-then-write on a shared counter with no locking - running these concurrently would hand
   // two invoices the same løpenummer.
-  for (const fnr of fnrList) {
-    const matches = contractsByFnr.get(fnr) ?? []
+  try {
+    for (const fnr of fnrList) {
+      // Flushed at the top: the body has eight continues, so an end-of-body call would skip every
+      // student who was not invoiced.
+      await store.tick('running', report)
+      store.advance()
 
-    if (matches.length === 0) {
-      report.notFound.push({ fnr })
-      continue
-    }
-    if (matches.length > 1) {
-      // Never guess which contract to bill.
-      report.multiMatch.push({
-        fnr,
-        navn: matches[0].contract.elevInfo?.navn,
-        contracts: matches.map(({ contract, documentType }) => ({ contractId: String(contract._id), documentType }))
-      })
-      continue
-    }
+      const matches = contractsByFnr.get(fnr) ?? []
 
-    const { contract, documentType } = matches[0]
-    const student = {
-      fnr,
-      navn: contract.elevInfo?.navn,
-      contractId: String(contract._id),
-      documentType
-    }
-
-    if (!isLeieavtale(contract)) {
-      report.skipped.push({ ...student, reason: 'not-leieavtale', kontraktType: contract.unSignedskjemaInfo?.kontraktType })
-      continue
-    }
-
-    const defect = findContractDefect(contract)
-    if (defect) {
-      report.skipped.push({ ...student, reason: defect })
-      continue
-    }
-
-    if (hasInvoiceFlowExceptionFn(fnr, invoiceFlowExceptions)) {
-      // The Xledger sweep would hold this back anyway; skipping here keeps the reservation off the
-      // contract so nothing has to be unwound when the exception is lifted.
-      report.skipped.push({ ...student, reason: 'invoice-flow-exception' })
-      continue
-    }
-
-    const { rates, skippedRates } = selectRatesToInvoice(contract, mode)
-    for (const skippedRate of skippedRates) {
-      report.skippedRates.push({ ...student, rateKey: skippedRate.rateKey, faktureringsår: skippedRate.faktureringsår, reason: skippedRate.reason })
-    }
-    if (rates.length === 0) {
-      // Distinguished deliberately: 'no-unpaid-rates' means there was nothing to do, which is the
-      // normal result of re-running a file. 'unmatchable-rates' means the contract DOES owe money
-      // that this job refused to bill - a data problem somebody has to look at.
-      report.skipped.push({ ...student, reason: skippedRates.length > 0 ? 'unmatchable-rates' : 'no-unpaid-rates' })
-      continue
-    }
-
-    const items = rates.map(rate => ({
-      faktureringsår: rate.faktureringsår,
-      sum: returnCorrectPriceForStudentFn(fnr, contract.elevInfo?.klasse, prices, exceptionsFromRegularPrices)
-    }))
-    const total = items.reduce((sum, item) => sum + Number(item.sum), 0)
-    const invoicedEntry = {
-      ...student,
-      rates: rates.map((rate, index) => ({ ...rate, sum: items[index].sum })),
-      total
-    }
-
-    // Checked even on a dry run, so the preview tells you a contract is already spoken for rather
-    // than promising an invoice that the real run would then refuse.
-    const pending = await findPendingBuyOutInvoices(contract._id, getDocumentsFn)
-    if (pending.length > 0) {
-      report.skipped.push({
-        ...student,
-        reason: 'pending-invoice-exists',
-        pendingInvoiceIds: pending.map(invoice => String(invoice._id))
-      })
-      continue
-    }
-
-    if (dryRun) {
-      report.invoiced.push(invoicedEntry)
-      continue
-    }
-
-    // Marked bought out before invoicing, mirroring handleBoughtOut. Safe in either order:
-    // 'Ikke Fakturert' is not in BOUGHT_OUT_ALLOWED_RATE_STATUSES, so the contract cannot slip into
-    // the final archive between the two writes.
-    if (mode === 'boughtOut' && contract.pcInfo?.boughtOut !== 'true') {
-      try {
-        const pcResult = await updateContractPCStatusFn(
-          { contractID: student.contractId, buyOutPC: 'true', upn: invoiceCreatedBy.email ?? 'masseinnfakturering' },
-          false,
-          targetCollectionFor(documentType)
-        )
-        const { updated, reason } = assertContractUpdated(pcResult, `${logPrefix} - pcInfo på kontrakt ${student.contractId} i '${documentType}'`)
-        if (!updated) {
-          // Not fatal for this student: the rates are what get billed, and the flag can be set by
-          // hand afterwards. Reported so nobody assumes it landed.
-          report.errors.push({ ...student, stage: 'boughtOut-flag', error: reason })
-        }
-      } catch (error) {
-        report.errors.push({ ...student, stage: 'boughtOut-flag', error: error.message })
-      }
-    }
-
-    try {
-      const result = await createBuyOutInvoiceFn(contract, items, documentType, invoiceCreatedBy, {
-        rateStatusOnInvoice: RATE_STATUS_BY_MODE[mode],
-        invoiceLineLabel: INVOICE_LINE_LABEL_BY_MODE[mode]
-      })
-      if (result.status !== 200) {
-        // createBuyOutInvoice bails mid-loop on a failed rate write, so the contract may be partly
-        // updated - it says so itself. Recorded and moved past; one bad contract must not end the run.
-        logger('error', [logPrefix, `createBuyOutInvoice feilet for kontrakt ${student.contractId} (fnr: ${maskFnr(fnr)}): ${result.status} ${result.body}`])
-        report.errors.push({ ...student, stage: 'createBuyOutInvoice', error: result.body, status: result.status })
+      if (matches.length === 0) {
+        report.notFound.push({ fnr })
         continue
       }
-      report.invoiced.push(invoicedEntry)
-    } catch (error) {
-      logger('error', [logPrefix, `Uventet feil ved fakturering av kontrakt ${student.contractId} (fnr: ${maskFnr(fnr)})`, error.message])
-      report.errors.push({ ...student, stage: 'createBuyOutInvoice', error: error.message })
+      if (matches.length > 1) {
+        // Never guess which contract to bill.
+        report.multiMatch.push({
+          fnr,
+          navn: matches[0].contract.elevInfo?.navn,
+          contracts: matches.map(({ contract, documentType }) => ({ contractId: String(contract._id), documentType }))
+        })
+        continue
+      }
+
+      const { contract, documentType } = matches[0]
+      const student = {
+        fnr,
+        navn: contract.elevInfo?.navn,
+        contractId: String(contract._id),
+        documentType
+      }
+
+      if (!isLeieavtale(contract)) {
+        report.skipped.push({ ...student, reason: 'not-leieavtale', kontraktType: contract.unSignedskjemaInfo?.kontraktType })
+        continue
+      }
+
+      const defect = findContractDefect(contract)
+      if (defect) {
+        report.skipped.push({ ...student, reason: defect })
+        continue
+      }
+
+      if (hasInvoiceFlowExceptionFn(fnr, invoiceFlowExceptions)) {
+        // The Xledger sweep would hold this back anyway; skipping here keeps the reservation off the
+        // contract so nothing has to be unwound when the exception is lifted.
+        report.skipped.push({ ...student, reason: 'invoice-flow-exception' })
+        continue
+      }
+
+      const { rates, skippedRates } = selectRatesToInvoice(contract, mode)
+      for (const skippedRate of skippedRates) {
+        report.skippedRates.push({ ...student, rateKey: skippedRate.rateKey, faktureringsår: skippedRate.faktureringsår, reason: skippedRate.reason })
+      }
+      if (rates.length === 0) {
+        // Distinguished deliberately: 'no-unpaid-rates' means there was nothing to do, which is the
+        // normal result of re-running a file. 'unmatchable-rates' means the contract DOES owe money
+        // that this job refused to bill - a data problem somebody has to look at.
+        report.skipped.push({ ...student, reason: skippedRates.length > 0 ? 'unmatchable-rates' : 'no-unpaid-rates' })
+        continue
+      }
+
+      const items = rates.map(rate => ({
+        faktureringsår: rate.faktureringsår,
+        sum: returnCorrectPriceForStudentFn(fnr, contract.elevInfo?.klasse, prices, exceptionsFromRegularPrices)
+      }))
+      const total = items.reduce((sum, item) => sum + Number(item.sum), 0)
+      const invoicedEntry = {
+        ...student,
+        rates: rates.map((rate, index) => ({ ...rate, sum: items[index].sum })),
+        total
+      }
+
+      // Checked even on a dry run, so the preview tells you a contract is already spoken for rather
+      // than promising an invoice that the real run would then refuse.
+      const pending = await findPendingBuyOutInvoices(contract._id, getDocumentsFn)
+      if (pending.length > 0) {
+        report.skipped.push({
+          ...student,
+          reason: 'pending-invoice-exists',
+          pendingInvoiceIds: pending.map(invoice => String(invoice._id))
+        })
+        continue
+      }
+
+      if (dryRun) {
+        report.invoiced.push(invoicedEntry)
+        store.note({ fnr, navn: student.navn, total })
+        continue
+      }
+
+      // Marked bought out before invoicing, mirroring handleBoughtOut. Safe in either order:
+      // 'Ikke Fakturert' is not in BOUGHT_OUT_ALLOWED_RATE_STATUSES, so the contract cannot slip into
+      // the final archive between the two writes.
+      if (mode === 'boughtOut' && contract.pcInfo?.boughtOut !== 'true') {
+        try {
+          const pcResult = await updateContractPCStatusFn(
+            { contractID: student.contractId, buyOutPC: 'true', upn: invoiceCreatedBy.email ?? 'masseinnfakturering' },
+            false,
+            targetCollectionFor(documentType)
+          )
+          const { updated, reason } = assertContractUpdated(pcResult, `${logPrefix} - pcInfo på kontrakt ${student.contractId} i '${documentType}'`)
+          if (!updated) {
+            // Not fatal for this student: the rates are what get billed, and the flag can be set by
+            // hand afterwards. Reported so nobody assumes it landed.
+            report.errors.push({ ...student, stage: 'boughtOut-flag', error: reason })
+          }
+        } catch (error) {
+          report.errors.push({ ...student, stage: 'boughtOut-flag', error: error.message })
+        }
+      }
+
+      try {
+        const result = await createBuyOutInvoiceFn(contract, items, documentType, invoiceCreatedBy, {
+          rateStatusOnInvoice: RATE_STATUS_BY_MODE[mode],
+          invoiceLineLabel: INVOICE_LINE_LABEL_BY_MODE[mode],
+          bulkRunId: runId
+        })
+        if (result.status !== 200) {
+          // createBuyOutInvoice bails mid-loop on a failed rate write, so the contract may be partly
+          // updated - it says so itself. Recorded and moved past; one bad contract must not end the run.
+          logger('error', [logPrefix, `createBuyOutInvoice feilet for kontrakt ${student.contractId} (fnr: ${maskFnr(fnr)}): ${result.status} ${result.body}`])
+          report.errors.push({ ...student, stage: 'createBuyOutInvoice', error: result.body, status: result.status })
+          continue
+        }
+        report.invoiced.push(invoicedEntry)
+        store.note({ fnr, navn: student.navn, total })
+      } catch (error) {
+        logger('error', [logPrefix, `Uventet feil ved fakturering av kontrakt ${student.contractId} (fnr: ${maskFnr(fnr)})`, error.message])
+        report.errors.push({ ...student, stage: 'createBuyOutInvoice', error: error.message })
+      }
     }
+  } catch (error) {
+    // Reaching here means the run itself came apart - per-student failures are handled inside the
+    // loop. Whatever was billed up to this point is real and has to be written down.
+    report.fatal = { reason: 'run-aborted', message: error.message }
+    await store.write('failed', report)
+    report.reportBlob = store.state()
+    throw error
   }
 
   report.totals = {
@@ -592,7 +619,11 @@ const bulkInvoiceFromFile = async (deps = {}, options = {}) => {
     sum: report.invoiced.reduce((sum, entry) => sum + entry.total, 0)
   }
 
-  logger('info', [logPrefix, `${dryRun ? '[DRY RUN] Ville fakturert' : 'Fakturerte'} ${report.totals.contracts} kontrakt(er) / ${report.totals.rates} rate(r), sum ${report.totals.sum}. Hoppet over: ${report.skipped.length}, flere treff: ${report.multiMatch.length}, ikke funnet: ${report.notFound.length}, feil: ${report.errors.length}`])
+  await store.write('completed', report)
+  await store.writeProgress('completed', report)
+  report.reportBlob = store.state()
+
+  logger('info', [logPrefix, `runId: ${runId} - ${report.reportBlob.persisted ? `rapport: ${report.reportBlob.blobName}` : `rapport IKKE lagret: ${report.reportBlob.error}`} - ${dryRun ? '[DRY RUN] Ville fakturert' : 'Fakturerte'} ${report.totals.contracts} kontrakt(er) / ${report.totals.rates} rate(r), sum ${report.totals.sum}. Hoppet over: ${report.skipped.length}, flere treff: ${report.multiMatch.length}, ikke funnet: ${report.notFound.length}, feil: ${report.errors.length}`])
 
   return report
 }

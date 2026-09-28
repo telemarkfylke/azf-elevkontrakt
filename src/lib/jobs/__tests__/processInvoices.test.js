@@ -195,3 +195,31 @@ describe('createBuyOutInvoice - rateStatusOnInvoice', () => {
     assert.equal(posted[0].rates.length, 1)
   })
 })
+
+// =====================================================================
+// createBuyOutInvoice - bulkRunId
+//
+// A bulk run outlives its HTTP response, so the report naming what it billed can be lost. Stamping
+// the run on each invoice makes the invoices collection answerable on its own.
+// =====================================================================
+
+describe('createBuyOutInvoice - bulkRunId', () => {
+  test('is stored on the invoice when the caller supplies one', async () => {
+    const posted = []
+    const deps = { ...makeDeps({ postedInvoices: posted }), bulkRunId: 'run-1' }
+
+    const result = await createBuyOutInvoice(makeContract(), [{ faktureringsår: 2024, sum: 4000 }], 'regular', {}, deps)
+
+    assert.equal(result.status, 200)
+    assert.equal(posted[0].bulkRunId, 'run-1')
+  })
+
+  test('the key is absent entirely for the cart flow, which supplies none', async () => {
+    const posted = []
+    const deps = makeDeps({ postedInvoices: posted })
+
+    await createBuyOutInvoice(makeContract(), [{ faktureringsår: 2024, sum: 4000 }], 'regular', {}, deps)
+
+    assert.equal('bulkRunId' in posted[0], false, 'a cart-created invoice stays byte-identical to before this existed')
+  })
+})

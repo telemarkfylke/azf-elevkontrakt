@@ -69,6 +69,13 @@ module.exports = {
     xFunctionsKey: process.env.EMAIL_API_KEY,
     url: process.env.EMAIL_API_URL
   },
+  storage: {
+    connectionString: process.env.AZURE_STORAGE_CONNECTION_STRING
+  },
+  bulkInvoice: {
+    runContainer: process.env.BULK_INVOICE_RUN_CONTAINER || `bulk-invoice-runs-${process.env.NODE_ENV || 'dev'}`,
+    runRetentionDays: Number(process.env.BULK_INVOICE_RUN_RETENTION_DAYS) || 90
+  },
   changeStream: {
     storageConnectionString: process.env.AZURE_STORAGE_CONNECTION_STRING,
     tokenBlobContainer: process.env.CHANGE_STREAM_TOKEN_BLOB_CONTAINER || `change-stream-state-${process.env.NODE_ENV || 'dev'}`,

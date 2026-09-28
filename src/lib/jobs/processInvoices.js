@@ -1,9 +1,6 @@
 
 /**
- * Function to process the invoices based on the provided body from the invoice function. It will handle both buyOut and extraInvoice types, generate serial numbers for buyOut rates, update the contract with the new status and serial numbers, and post the invoices to the xledgerExtraInvoice endpoint.
- * 
- * @param {Object} body 
- * @returns {Object} - An object containing the status and body of the invoice processing result.
+ * Invoice processing: buyOut and extraInvoice.
  */
 
 const { ObjectId } = require("mongodb")
@@ -14,34 +11,23 @@ const { generateSerialNumber } = require("../helpers/getSerialNumber")
 
 
 /**
- * Builds and posts a buyOut invoice for a contract: matches each cart item to an unpaid
- * ('Ikke Fakturert') rate by faktureringsår, generates a serial number and flips that rate's
- * status/sum/løpenummer, then posts the invoice document. Shared by the manual cart-checkout
- * flow (generateInvoices, below) and the automated Pureservice buyout sync
- * (syncPureserviceAssetLifecycle.js) - callers unpack their own input shape (HTTP cart body vs.
- * computed values) and build invoiceCreatedBy themselves; this function only knows about the
- * contract and rates.
+ * Matches each cart item to an unpaid rate by faktureringsår, mints a serial number, flips the rate,
+ * then posts the invoice. Shared by the cart checkout (generateInvoices) and the Pureservice buyout
+ * sync - callers build invoiceCreatedBy themselves.
  * @param {Object} customerContract - full contract document
  * @param {Array<{faktureringsår: *, sum: *}>} buyOutItems
- * @param {string} mainDocumentCollectionSource - 'regular' | 'pcIkkeInnlevert'. Stored on the invoice
- *   as a HINT ONLY: the contract moves collections over its life and this value goes stale. Anything
- *   later writing to the contract must resolve the collection via findContractById first - see
- *   docs/pc-ikke-innlevert-lifecycle.md. Safe to use here because the caller has just read the
- *   contract out of this very collection.
+ * @param {string} mainDocumentCollectionSource - 'regular' | 'pcIkkeInnlevert'. A HINT: contracts move
+ *   collections, so later writers must resolve via findContractById.
+ *   See docs/pc-ikke-innlevert-lifecycle.md.
  * @param {Object} invoiceCreatedBy - { name, givenName, surname, email, companyName, officeLocation, jobTitle }
  * @param {Object} [deps]
- * @param {String} [deps.rateStatusOnInvoice] - the status written to the contract's rate, defaulting to
- *   'Fakturert - Utkjøp'. A buyout is the only thing this function was originally used for, but the
- *   same rails carry a plain one-off termin invoice (bulkInvoiceFromFile.js, mode 'oneTime'), and that
- *   is not a buyout - its rate must read 'Fakturert'. The value is stored on the invoice document too,
- *   because the Xledger import writes the rate a second time on the way back
- *   (updateImportedBuyOutDocument, xledgerInvoiceImport.js) and would otherwise overwrite it with the
- *   buyout status. Invoices written before this field existed have no value and keep the old status.
- * @param {String} [deps.invoiceLineLabel] - overrides the description printed on the invoice LINE the
- *   recipient actually reads (handleBuyOutInvoice, xledgerExtraInvoice.js). Same reason as
- *   rateStatusOnInvoice: a one-off termin invoice on these rails must not tell a guardian their PC was
- *   bought out. Omitted for a real buyout, which keeps the existing 'Utkjøp av elev-PC - Faktura n/m'
- *   wording byte for byte.
+ * @param {String} [deps.rateStatusOnInvoice] - status written to the rate, default 'Fakturert - Utkjøp'.
+ *   A one-off termin invoice on these rails is not a buyout and must read 'Fakturert'. Stored on the
+ *   invoice too, or updateImportedBuyOutDocument relabels it on the way back from Xledger.
+ * @param {String} [deps.invoiceLineLabel] - overrides the text on the invoice line, so a one-off termin
+ *   invoice does not tell a guardian their PC was bought out. Omitted for a real buyout.
+ * @param {String} [deps.bulkRunId] - correlates the invoices from one bulkInvoiceFromFile run, whose
+ *   report can be lost with the HTTP response. Absent for the cart and Pureservice callers.
  * @returns {Promise<{status: number, body: string}>}
  */
 const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCollectionSource, invoiceCreatedBy, deps = {}) => {
@@ -52,14 +38,14 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
         logger: _logger = logger,
         rateStatusOnInvoice = 'Fakturert - Utkjøp',
         invoiceLineLabel,
+        bulkRunId,
     } = deps
 
     const logPrefix = 'createBuyOutInvoice - processInvoices'
 
-    // Get rates from fakturaInfo object.
     const ratesFromFakturaInfo = Object.keys(customerContract.fakturaInfo).filter(key => key.startsWith('rate')).map(key => customerContract.fakturaInfo[key])
 
-    // Find the rates beeing invoiced in the contract based on the faktureringsår, this should be unique for each rate.
+    // faktureringsår is unique per rate, so it is what a cart item matches on.
     const ratesToInvoice = []
     for (const buyOutItem of buyOutItems) {
         let foundRate = null
@@ -74,16 +60,9 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
                 updateRate[`fakturaInfo.${rateNumberFull}.løpenummer`] = serialNumber
                 updateRate[`fakturaInfo.${rateNumberFull}.sum`] = buyOutItem.sum
                 const updateResult = await _updateDocument(customerContract._id, updateRate, mainDocumentCollectionSource)
-                // Largely shielded, since the caller looked the contract up in this same collection
-                // moments ago (a wrong value would have 404'd there) - but if the contract moved in
-                // between, the rate would silently keep 'Ikke Fakturert' and the normal invoice run
-                // would bill the rate we just bought out.
-                //
-                // Bail rather than carry on: with several buyOut items an earlier rate may already
-                // be flipped, so this can leave the contract partially updated - but that is visible
-                // to the caller as a 500 and recoverable by hand, whereas continuing would post an
-                // invoice whose rates the contract does not agree with, which is the silent
-                // divergence this whole check exists to stop.
+                // If the contract moved collections since the caller read it, the rate would silently keep
+                // 'Ikke Fakturert' and the normal run would bill it again. Bail rather than post an invoice
+                // the contract disagrees with - a partial update at least surfaces as a 500.
                 const { updated, reason } = assertContractUpdated(updateResult, `${logPrefix} - kontrakt ${customerContract._id} i '${mainDocumentCollectionSource}'`)
                 if (!updated) {
                   _logger('error', [logPrefix, `Klarte ikke oppdatere rate${rateNumber} på kontrakt ${customerContract._id}: ${reason}. Avbryter utkjøpsfakturaen - kontrakten kan være delvis oppdatert og må sjekkes.`])
@@ -110,9 +89,7 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
 
     const buyOutObject = {
         type: 'buyOut',
-        // customerContractId survives every collection move (moveAndDeleteDocument preserves _id),
-        // so it is the reliable link. mainDocumentCollectionSource is only a hint - kept fresh by
-        // moveAndDeleteDocument, but resolve via findContractById before writing to the contract.
+        // _id survives every collection move, so this is the reliable link.
         customerContractId: customerContract._id,
         mainDocumentCollectionSource,
         recipient: {
@@ -123,12 +100,11 @@ const createBuyOutInvoice = async (customerContract, buyOutItems, mainDocumentCo
         },
         skoleOrgNr: customerContract.skoleOrgNr,
         status: 'Ikke Fakturert',
-        // Read back by updateImportedBuyOutDocument so the Xledger import re-applies the status this
-        // invoice was created with, rather than assuming every invoice on these rails is a buyout.
+        // Read back on import, so it does not assume every invoice here is a buyout.
         rateStatusOnInvoice,
-        // Only set when the caller wants line text other than the buyout wording, so a real buyout's
-        // invoice document is unchanged from before this option existed.
+        // Conditional, so a real buyout's document is unchanged from before these options existed.
         ...(invoiceLineLabel ? { invoiceLineLabel } : {}),
+        ...(bulkRunId ? { bulkRunId } : {}),
         itemsFromCart: buyOutItems,
         rates: ratesToInvoice,
         invoiceCreatedBy,
@@ -192,16 +168,15 @@ const generateInvoices = async (body, request, deps = {}) => {
     // Handle extraInvoice
     if(body.cart.extraInvoice.length > 0) {
 
-        // Prevent creating a duplicate pending extraInvoice for the same contract (e.g. a double "send" click before the nightly Xledger import runs)
+        // A double "send" before the nightly import would otherwise leave two pending invoices.
         const existingPendingExtraInvoice = await _getDocuments({ customerContractId: customerContract._id, type: 'extraInvoice', status: 'Ikke Fakturert' }, 'invoices')
         if (existingPendingExtraInvoice.status === 200 && existingPendingExtraInvoice.result.length > 0) {
             _logger('error', [`${logPrefix} - ${request.method}`, `A pending extraInvoice already exists for customerContractId: ${customerContract._id}`])
             return { status: 409, body: 'Conflict: A pending extra invoice already exists for this contract' }
         }
 
-        // Generate the serial number once, here, and persist it on the invoice document.
-        // If this were generated again later (in handleExtraInvoice) on every Xledger import run, a retry after a failed
-        // status write-back would mint a brand-new invoice for the same cart instead of resending the same one.
+        // Minted once and persisted: regenerating it per import run would turn a retry into a second
+        // invoice for the same cart.
         const løpenummer = await _generateSerialNumber(4)
 
         extraInvoiceObject = {
@@ -238,7 +213,6 @@ const generateInvoices = async (body, request, deps = {}) => {
             return { status: 500, body: 'Internal Server Error: Error posting extra invoice' }
         }
     }
-    // If the function has not returned by now, it means the invoice(s) have been processed successfully
     return { status: 200, body: 'Invoices processed successfully' }
 
 }
