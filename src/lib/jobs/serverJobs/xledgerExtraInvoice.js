@@ -17,7 +17,7 @@ const { generateInvoiceImportFile, sendImportFailureAlert } = require("./xledger
 const { generateSerialNumber } = require("../../helpers/getSerialNumber")
 const { standardFields } = require("../../datasources/productStandardFields")
 const { findContractById } = require("../findContract")
-const { isRecipientImportedToXledger } = require("../../helpers/checkXledgerRecipientImport")
+const { isRecipientImportedToXledger, hasRecipientSettledInXledger, XLEDGER_SETTLE_DAYS } = require("../../helpers/checkXledgerRecipientImport")
 const { maskFnr } = require("../../helpers/maskFnr")
 
 /**
@@ -30,6 +30,8 @@ const { maskFnr } = require("../../helpers/maskFnr")
  * (xledgerInvoiceImport.js getXledgerInvoiceImports), these two runs did not - so an invoice for a
  * not-yet-imported responsible person landed in Xledger with an unknown subledger account and
  * someone had to create the recipient by hand.
+ *
+ * The recipient must also have been in Xledger for XLEDGER_SETTLE_DAYS, same as the automatic rate run.
  *
  * Fails closed: a contract that cannot be found, or a lookup that throws, counts as not imported.
  * Skipping costs nothing - the invoice keeps status 'Ikke Fakturert' and the next run picks it up
@@ -47,6 +49,8 @@ const resolveRecipientImportStatus = async (invoice, deps = {}) => {
     const {
         findContractById: _findContractById = findContractById,
         isRecipientImportedToXledger: _isRecipientImportedToXledger = isRecipientImportedToXledger,
+        hasRecipientSettledInXledger: _hasRecipientSettledInXledger = hasRecipientSettledInXledger,
+        now = Date.now(),
     } = deps
 
     const buildSkip = (reason, documentType = null) => ({
@@ -70,6 +74,9 @@ const resolveRecipientImportStatus = async (invoice, deps = {}) => {
         }
         if (!_isRecipientImportedToXledger(contract)) {
             return { imported: false, skip: buildSkip(`Mottakeren er ikke importert til Xledger (isImportedToXledger = ${JSON.stringify(contract.isImportedToXledger)})`, documentType) }
+        }
+        if (!_hasRecipientSettledInXledger(contract, now)) {
+            return { imported: false, skip: buildSkip(`Mottakeren har ikke vært i Xledger i ${XLEDGER_SETTLE_DAYS} dager ennå (importedToXledgerAt = ${JSON.stringify(contract.importedToXledgerAt ?? null)})`, documentType) }
         }
         return { imported: true, skip: null }
     } catch (error) {
@@ -110,6 +117,8 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
         generateInvoiceImportFile: _generateInvoiceImportFile = generateInvoiceImportFile,
         findContractById: _findContractById = findContractById,
         isRecipientImportedToXledger: _isRecipientImportedToXledger = isRecipientImportedToXledger,
+        hasRecipientSettledInXledger: _hasRecipientSettledInXledger = hasRecipientSettledInXledger,
+        now = Date.now(),
         logger: _logger = logger,
     } = deps
 
@@ -135,6 +144,8 @@ const handleBuyOutInvoice = async (invoices, deps = {}) => {
         const { imported, skip } = await resolveRecipientImportStatus(invoice, {
             findContractById: _findContractById,
             isRecipientImportedToXledger: _isRecipientImportedToXledger,
+            hasRecipientSettledInXledger: _hasRecipientSettledInXledger,
+            now,
         })
         if (!imported) {
             skippedNotImportedToXledger.push(skip)
@@ -183,6 +194,8 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
         updateDocument: _updateDocument = updateDocument,
         findContractById: _findContractById = findContractById,
         isRecipientImportedToXledger: _isRecipientImportedToXledger = isRecipientImportedToXledger,
+        hasRecipientSettledInXledger: _hasRecipientSettledInXledger = hasRecipientSettledInXledger,
+        now = Date.now(),
         logger: _logger = logger,
     } = deps
 
@@ -196,6 +209,8 @@ const handleExtraInvoice = async (invoices, deps = {}) => {
         const { imported, skip } = await resolveRecipientImportStatus(invoice, {
             findContractById: _findContractById,
             isRecipientImportedToXledger: _isRecipientImportedToXledger,
+            hasRecipientSettledInXledger: _hasRecipientSettledInXledger,
+            now,
         })
         if (!imported) {
             skippedNotImportedToXledger.push(skip)
