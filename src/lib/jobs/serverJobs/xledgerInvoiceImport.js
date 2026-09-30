@@ -12,6 +12,7 @@ const { fileImport } = require('../queryXledger.js')
 const { returnCorrectPriceForStudent } = require('../../helpers/getCorrectRatePrice.js')
 const { hasInvoiceFlowException } = require('../../helpers/checkInvoiceFlowException.js')
 const { getThisYearsPriceList } = require('../../helpers/getSettings.js')
+const { XLEDGER_SETTLE_DAYS } = require('../../helpers/checkXledgerRecipientImport.js')
 const { ObjectId } = require('mongodb')
 
 /**
@@ -57,7 +58,7 @@ const getXledgerInvoiceImports = async () => {
     // '_id': { $in: [new ObjectId('68344862d29bf2ace91ac102'), new ObjectId('683c4575e898fc6f3b65b128'), new ObjectId('6840accce898fc6f3b65b12c'), new ObjectId('6840accde898fc6f3b65b12d')] }, // Only specific documents for testing
     'unSignedskjemaInfo.kontraktType': { $in: ['Leieavtale', 'leieavtale'] }, // Only contracts of type 'Leieavtale' or 'leieavtale'
     isImportedToXledger: { $eq: true }, // Already imported to Xledger (this school year, a job will reset this field for all documents at the start of a new school year)
-    importedToXledgerAt: { $lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, // Check that the document import is 7 days older or more
+    importedToXledgerAt: { $lte: new Date(Date.now() - XLEDGER_SETTLE_DAYS * 24 * 60 * 60 * 1000) }, // Imported at least XLEDGER_SETTLE_DAYS ago
     // 'notFoundInFINT.date': { $exists: false }, // Not marked as not found in FINT (we will handle this in the rate check below, some times FINT said that students are not found, even if they are still students at the school)
     $or: [
       { 'fakturaInfo.rate1.faktureringsår': { $in: [currentSchoolYear, parseInt(currentSchoolYear)] } }, // Find documents where at least one of the rates is the current school year, look for both string and number (incase :P)
@@ -238,7 +239,7 @@ const buildHeldBackSection = (skipped, options = {}) => {
   return [
     {
       type: 'TextBlock',
-      text: `**${skipped.length}** faktura(er) ble **ikke** sendt til Xledger fordi mottakeren ikke er importert dit (isImportedToXledger er ikke true). De står urørt med status 'Ikke Fakturert' og forsøkes på nytt når flagget settes.`,
+      text: `**${skipped.length}** faktura(er) ble **ikke** sendt til Xledger fordi mottakeren ikke er importert, eller er importert for mindre enn ${XLEDGER_SETTLE_DAYS} dager siden. De står urørt med status 'Ikke Fakturert' og forsøkes på nytt hver natt.`,
       wrap: true,
       weight: 'Bolder',
       size: 'Medium'
@@ -246,7 +247,7 @@ const buildHeldBackSection = (skipped, options = {}) => {
     ...(escalated.length > 0
       ? [{
           type: 'TextBlock',
-          text: `**Krever oppfølging:** ${escalated.length} av disse har ventet i mer enn ${HELD_ESCALATION_DAYS} dager. Flagget settes ikke automatisk for alle - mottakere som er opprettet manuelt i Xledger, kontrakter med kontraktType 'Ukjent' og kontrakter som ligger i pc-ikke-innlevert får det aldri. Sjekk om mottakeren finnes i Xledger og sett isImportedToXledger manuelt.`,
+          text: `**Krever oppfølging:** ${escalated.length} av disse har ventet i mer enn ${HELD_ESCALATION_DAYS} dager. Flagget settes ikke automatisk for alle - mottakere som er opprettet manuelt i Xledger, kontrakter med kontraktType 'Ukjent' og kontrakter som ligger i pc-ikke-innlevert får det aldri. Sjekk om mottakeren finnes i Xledger og sett isImportedToXledger og importedToXledgerAt manuelt.`,
           wrap: true,
           weight: 'Bolder',
           color: 'Attention'

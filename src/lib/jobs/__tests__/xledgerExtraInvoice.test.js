@@ -42,10 +42,13 @@ const makeSchoolInfo = (overrides = {}) => ({
   ...overrides,
 })
 
+// Well past the 7-day settle period.
+const SETTLED_AT = new Date('2026-01-05T08:00:00.000Z')
+
 // Contract lookup used by the isImportedToXledger gate. Defaults to an imported contract so the CSV
 // tests below exercise the happy path; without this dep every test would hit the real findContractById
 // (and the real database).
-const makeContractLookup = (contract = { isImportedToXledger: true }, documentType = 'regular') =>
+const makeContractLookup = (contract = { isImportedToXledger: true, importedToXledgerAt: SETTLED_AT }, documentType = 'regular') =>
   async () => ({ contract, documentType })
 
 const makeStandardDeps = (capturedCsv) => ({
@@ -519,7 +522,7 @@ describe('isImportedToXledger gate', () => {
   test('extraInvoice: imported for boolean true, string "true" and "TRUE"', async () => {
     for (const value of [true, 'true', 'TRUE']) {
       const csv = []
-      const deps = { ...makeExtraDeps(csv), findContractById: makeContractLookup({ isImportedToXledger: value }) }
+      const deps = { ...makeExtraDeps(csv), findContractById: makeContractLookup({ isImportedToXledger: value, importedToXledgerAt: SETTLED_AT }) }
       await handleExtraInvoice([makeExtraInvoice()], deps)
       assert.equal(csv.length, 2, `isImportedToXledger = ${JSON.stringify(value)} should be invoiced`)
     }
@@ -542,7 +545,7 @@ describe('isImportedToXledger gate', () => {
     const importedCsv = []
     await handleBuyOutInvoice([makeBuyOutInvoice()], {
       ...makeStandardDeps(importedCsv),
-      findContractById: makeContractLookup({ isImportedToXledger: 'true' }),
+      findContractById: makeContractLookup({ isImportedToXledger: 'true', importedToXledgerAt: SETTLED_AT }),
     })
     assert.equal(importedCsv.length, 3)
 
@@ -634,7 +637,7 @@ describe('isImportedToXledger gate', () => {
       {
         ...makeExtraDeps(null),
         findContractById: async (contractId) => ({
-          contract: { isImportedToXledger: contractId === 'contract-ok' ? true : 'false' },
+          contract: contractId === 'contract-ok' ? { isImportedToXledger: true, importedToXledgerAt: SETTLED_AT } : { isImportedToXledger: 'false' },
           documentType: 'regular',
         }),
       },
@@ -690,6 +693,82 @@ describe('isImportedToXledger gate', () => {
     await handleBuyOutInvoice([makeBuyOutInvoice()], deps)
     assert.equal(csv.length, 0)
     assert.equal(captured.options.skippedNotImportedToXledger.length, 0)
+  })
+})
+
+// =====================================================================
+// Settle period - the recipient must have been in Xledger for 7 days
+// =====================================================================
+
+describe('Xledger settle period gate', () => {
+  const DAY = 24 * 60 * 60 * 1000
+  const NOW = new Date('2026-09-30T00:30:00.000Z').getTime()
+  const importedDaysAgo = (days) => ({ isImportedToXledger: true, importedToXledgerAt: new Date(NOW - days * DAY) })
+  const capture = (base, csv, captured) => ({
+    ...base,
+    now: NOW,
+    generateInvoiceImportFile: async (type, csvData, options) => {
+      csv.push(...csvData)
+      captured.options = options
+      return { status: 200, type }
+    },
+  })
+
+  test('extraInvoice: held back when the recipient was imported less than 7 days ago', async () => {
+    const csv = []
+    const captured = {}
+    await handleExtraInvoice([makeExtraInvoice()], capture({ ...makeExtraDeps(null), findContractById: makeContractLookup(importedDaysAgo(3)) }, csv, captured))
+    assert.equal(csv.length, 0)
+    assert.equal(captured.options.skippedNotImportedToXledger.length, 1)
+    assert.match(captured.options.skippedNotImportedToXledger[0].reason, /ikke vært i Xledger i 7 dager/)
+  })
+
+  test('buyOut: held back when the recipient was imported less than 7 days ago', async () => {
+    const csv = []
+    const captured = {}
+    await handleBuyOutInvoice([makeBuyOutInvoice()], capture({ ...makeStandardDeps(null), findContractById: makeContractLookup(importedDaysAgo(6)) }, csv, captured))
+    assert.equal(csv.length, 0)
+    assert.equal(captured.options.skippedNotImportedToXledger.length, 1)
+  })
+
+  test('sent once exactly 7 days have passed', async () => {
+    const csv = []
+    await handleExtraInvoice([makeExtraInvoice()], capture({ ...makeExtraDeps(null), findContractById: makeContractLookup(importedDaysAgo(7)) }, csv, {}))
+    assert.equal(csv.length, 2)
+  })
+
+  test('held back when importedToXledgerAt is missing, "Ukjent" or not a date', async () => {
+    for (const importedToXledgerAt of [undefined, 'Ukjent', 'ikke en dato', null]) {
+      const csv = []
+      const captured = {}
+      const contract = { isImportedToXledger: true, importedToXledgerAt }
+      await handleExtraInvoice([makeExtraInvoice()], capture({ ...makeExtraDeps(null), findContractById: makeContractLookup(contract) }, csv, captured))
+      assert.equal(csv.length, 0, `importedToXledgerAt = ${JSON.stringify(importedToXledgerAt)} should be held back`)
+      assert.match(captured.options.skippedNotImportedToXledger[0].reason, /importedToXledgerAt = /)
+    }
+  })
+
+  test('an ISO date string counts the same as a Date', async () => {
+    const csv = []
+    const contract = { isImportedToXledger: 'true', importedToXledgerAt: new Date(NOW - 10 * DAY).toISOString() }
+    await handleExtraInvoice([makeExtraInvoice()], capture({ ...makeExtraDeps(null), findContractById: makeContractLookup(contract) }, csv, {}))
+    assert.equal(csv.length, 2)
+  })
+
+  test('a not-imported recipient still reports the import reason, not the settle reason', async () => {
+    const captured = {}
+    await handleExtraInvoice([makeExtraInvoice()], capture({ ...makeExtraDeps(null), findContractById: makeContractLookup({ isImportedToXledger: 'false', importedToXledgerAt: SETTLED_AT }) }, [], captured))
+    assert.match(captured.options.skippedNotImportedToXledger[0].reason, /isImportedToXledger = "false"/)
+  })
+
+  test('a held-back invoice does not get a løpenummer minted while it waits for the settle period', async () => {
+    let generateCalls = 0
+    const deps = {
+      ...capture({ ...makeExtraDeps([]), findContractById: makeContractLookup(importedDaysAgo(1)) }, [], {}),
+      generateSerialNumber: async () => { generateCalls++; return 'SHOULD-NOT-BE-USED' },
+    }
+    await handleExtraInvoice([makeExtraInvoice({ løpenummer: undefined })], deps)
+    assert.equal(generateCalls, 0)
   })
 })
 

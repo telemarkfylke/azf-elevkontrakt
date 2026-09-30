@@ -21,6 +21,27 @@ const isRecipientImportedToXledger = (contract) => {
   return typeof value === 'string' && value.toLowerCase() === 'true'
 }
 
+// Days a recipient must have been in Xledger before we send an invoice to it. Used by both invoice runs.
+const XLEDGER_SETTLE_DAYS = 7
+
+/**
+ * Whether the recipient was imported to Xledger at least XLEDGER_SETTLE_DAYS ago.
+ * Only a real date counts - a missing value or 'Ukjent' is not settled.
+ * @param {Object} contract | A contract document
+ * @param {Number} [now] | Epoch ms, for tests
+ * @param {Number} [days]
+ * @returns {Boolean}
+ */
+const hasRecipientSettledInXledger = (contract, now = Date.now(), days = XLEDGER_SETTLE_DAYS) => {
+  const value = contract?.importedToXledgerAt
+  if (!(value instanceof Date) && typeof value !== 'string') return false
+  const importedAt = new Date(value).getTime()
+  if (!Number.isFinite(importedAt)) return false
+  return importedAt <= now - days * 24 * 60 * 60 * 1000
+}
+
 module.exports = {
-  isRecipientImportedToXledger
+  isRecipientImportedToXledger,
+  hasRecipientSettledInXledger,
+  XLEDGER_SETTLE_DAYS
 }
