@@ -5,6 +5,7 @@ const assert = require('node:assert/strict')
 const {
   detectIdentifierType,
   isValidOrgnrChecksum,
+  isValidFnrChecksum,
   getAnsvarligType,
   isOrganisation,
   getElevFnrType,
@@ -141,5 +142,25 @@ describe('getElevFnrType / isFiktivElev — legacy documents must keep working',
   test('an unrecognised fnrType reads as ordinær', () => {
     assert.equal(getElevFnrType({ fnrType: 'Fiktiv' }), 'ordinær')
     assert.equal(getElevFnrType({ fnrType: true }), 'ordinær')
+  })
+})
+
+describe('isValidFnrChecksum', () => {
+  test('accepts a valid fødselsnummer and D-nummer', () => {
+    assert.equal(isValidFnrChecksum('01019000083'), true)
+    assert.equal(isValidFnrChecksum('41019000077'), true) // D-nummer
+    assert.equal(isValidFnrChecksum('010190 000 83'), true)
+  })
+
+  test('rejects a wrong first or second control digit', () => {
+    assert.equal(isValidFnrChecksum('01019000093'), false)
+    assert.equal(isValidFnrChecksum('01019000084'), false)
+  })
+
+  test('rejects anything that is not exactly 11 digits', () => {
+    assert.equal(isValidFnrChecksum('0101900008'), false)
+    assert.equal(isValidFnrChecksum('929882989'), false)
+    assert.equal(isValidFnrChecksum('Ukjent'), false)
+    assert.equal(isValidFnrChecksum(undefined), false)
   })
 })

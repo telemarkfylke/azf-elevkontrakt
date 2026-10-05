@@ -8,6 +8,9 @@
 
 // Mod-11 weights for an organisasjonsnummer, applied to the 8 leading digits.
 const ORGNR_WEIGHTS = [3, 2, 7, 6, 5, 4, 3, 2]
+// Mod-11 weights for the two control digits of a fødselsnummer / D-nummer.
+const FNR_K1_WEIGHTS = [3, 7, 6, 1, 8, 9, 4, 5, 2]
+const FNR_K2_WEIGHTS = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
 
 const FNR_LENGTH = 11
 const ORGNR_LENGTH = 9
@@ -64,6 +67,29 @@ const isValidOrgnrChecksum = (value) => {
   return controlDigit === digits[8]
 }
 
+const mod11ControlDigit = (digits, weights) => {
+  const remainder = weights.reduce((acc, weight, i) => acc + (weight * digits[i]), 0) % 11
+  return remainder === 0 ? 0 : 11 - remainder
+}
+
+/**
+ * Mod-11 checksum for a fødselsnummer or D-nummer. Only for the ansvarlig - a fiktiv elev number
+ * often fails it (see detectIdentifierType), but an ansvarlig is never fiktiv.
+ *
+ * @param {String} value
+ * @returns {Boolean}
+ */
+const isValidFnrChecksum = (value) => {
+  const normalized = normalizeIdentifier(value)
+  if (!/^\d{11}$/.test(normalized)) return false
+
+  const digits = normalized.split('').map(Number)
+  const k1 = mod11ControlDigit(digits, FNR_K1_WEIGHTS)
+  if (k1 === 10 || k1 !== digits[9]) return false
+  const k2 = mod11ControlDigit(digits, FNR_K2_WEIGHTS)
+  return k2 !== 10 && k2 === digits[10]
+}
+
 /**
  * Always read the type through this rather than testing `info.type` directly: contracts written
  * before the field existed have no `type`, and invoice `recipient` snapshots never get backfilled.
@@ -97,6 +123,7 @@ module.exports = {
   normalizeIdentifier,
   detectIdentifierType,
   isValidOrgnrChecksum,
+  isValidFnrChecksum,
   getAnsvarligType,
   isOrganisation,
   getElevFnrType,
