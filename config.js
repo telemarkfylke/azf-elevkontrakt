@@ -29,6 +29,10 @@ module.exports = {
     url: process.env.KRR_URL,
     key: process.env.KRR_X_FUNCTIONS_KEY
   },
+  msGraph: {
+    // Employee accounts only, elev accounts are on @skole.telemarkfylke.no
+    employeeUpnSuffix: process.env.GRAPH_EMPLOYEE_UPN_SUFFIX || '@telemarkfylke.no'
+  },
   brreg: {
     url: process.env.BRREG_URL || 'https://data.brreg.no/enhetsregisteret/api',
     timeout: Number(process.env.BRREG_TIMEOUT_MS) || 10000
