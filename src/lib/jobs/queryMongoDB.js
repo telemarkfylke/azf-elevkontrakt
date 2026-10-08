@@ -838,10 +838,11 @@ const moveAndDeleteDocument = async (documentId, targetCollection, sourceCollect
  *
  * @param {string} documentId
  * @param {object} updateData
- * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | settings | pcIkkeInnlevert | products | invoices
+ * @param {string} documentType | mock | preImport | regular | regularWithChangeLog | historyWithChangeLog | settings | pcIkkeInnlevert | products | invoices
+ * @param {object} [extraFilter] | extra match conditions (…WithChangeLog only), e.g. to stop lost updates
  * @returns
  */
-const updateDocument = async (documentId, updateData, documentType) => {
+const updateDocument = async (documentId, updateData, documentType, extraFilter = {}) => {
   const logPrefix = 'updateDocument'
   const mongoClient = await getMongoClient()
 
@@ -859,9 +860,13 @@ const updateDocument = async (documentId, updateData, documentType) => {
   if (!documentType) {
     logger('error', [logPrefix, 'Mangler documentType'])
     return { status: 400, error: 'Mangler documentType' }
-  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'settings' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products' && documentType !== 'invoices') {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices' }
+  } else if (documentType !== 'mock' && documentType !== 'preImport' && documentType !== 'regular' && documentType !== 'regularWithChangeLog' && documentType !== 'historyWithChangeLog' && documentType !== 'settings' && documentType !== 'pcIkkeInnlevert' && documentType !== 'products' && documentType !== 'invoices') {
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, historyWithChangeLog, settings, pcIkkeInnlevert, products eller invoices'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, historyWithChangeLog, settings, pcIkkeInnlevert, products eller invoices' }
+  }
+  if (Object.keys(extraFilter).length > 0 && documentType !== 'regularWithChangeLog' && documentType !== 'historyWithChangeLog') {
+    logger('error', [logPrefix, `extraFilter støttes ikke for ${documentType}`])
+    return { status: 400, error: `extraFilter støttes ikke for ${documentType}` }
   }
 
   // Check what keys are being updated
@@ -887,7 +892,7 @@ const updateDocument = async (documentId, updateData, documentType) => {
   } else if (documentType === 'preImport') {
     // Update contract in preImport collection
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.preImportDigitrollCollection}`).updateOne({ _id: new ObjectId(documentId) }, updateObject)
-  } else if (documentType === 'regularWithChangeLog') {
+  } else if (documentType === 'regularWithChangeLog' || documentType === 'historyWithChangeLog') {
     // If changeLog is being updated, push new entry to array
     const changeLogUpdateObject = { ...updateObject }
     if (updateData.data) {
@@ -896,7 +901,8 @@ const updateDocument = async (documentId, updateData, documentType) => {
     if (updateData.changeLog) {
       changeLogUpdateObject.$push = { changeLog: updateData.changeLog }
     }
-    result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ _id: new ObjectId(documentId) }, changeLogUpdateObject)
+    const collection = documentType === 'historyWithChangeLog' ? mongoDB.historicCollection : mongoDB.contractsCollection
+    result = await mongoClient.db(mongoDB.dbName).collection(`${collection}`).updateOne({ ...extraFilter, _id: new ObjectId(documentId) }, changeLogUpdateObject)
   } else if (documentType === 'regular') {
     // Update contract in collection
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.contractsCollection}`).updateOne({ _id: new ObjectId(documentId) }, updateObject)
@@ -943,11 +949,28 @@ const updateDocument = async (documentId, updateData, documentType) => {
     }
     result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.invoiceCollection}`).updateOne({ _id: new ObjectId(documentId) }, invoiceUpdateObject)
   } else {
-    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices'])
-    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, settings, pcIkkeInnlevert, products eller invoices' }
+    logger('error', [logPrefix, 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, historyWithChangeLog, settings, pcIkkeInnlevert, products eller invoices'])
+    return { status: 400, error: 'Ugyldig documentType, må være mock, preImport, regular, regularWithChangeLog, historyWithChangeLog, settings, pcIkkeInnlevert, products eller invoices' }
   }
 
   return result
+}
+
+/**
+ * Applies planInheritedUpdates (helpers/historyRateEdit.js) to live contracts in kontrakter and pc-ikke-innlevert.
+ * @param {Array} updates | [{ filter, set, changeLog }]
+ * @returns {number} | how many live contracts were changed
+ */
+const updateInheritedRates = async (updates) => {
+  const mongoClient = await getMongoClient()
+  let modified = 0
+  for (const collection of [mongoDB.contractsCollection, mongoDB.historicPcNotDeliveredCollection]) {
+    for (const update of updates) {
+      const result = await mongoClient.db(mongoDB.dbName).collection(`${collection}`).updateMany(update.filter, { $set: update.set, $push: { changeLog: update.changeLog } })
+      modified += result.modifiedCount
+    }
+  }
+  return modified
 }
 
 const deleteDocuments = async (query, collectionToDeleteFrom) => {
@@ -1132,6 +1155,7 @@ module.exports = {
   postManualContract,
   moveAndDeleteDocument,
   updateDocument,
+  updateInheritedRates,
   postDigitrollContract,
   deleteDocuments,
   postSerialNumber,

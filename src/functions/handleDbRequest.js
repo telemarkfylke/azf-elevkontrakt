@@ -1,12 +1,14 @@
 const { app } = require('@azure/functions')
-const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument, VALID_MOVE_TARGET_COLLECTIONS, VALID_MOVE_SOURCE_COLLECTIONS } = require('../lib/jobs/queryMongoDB')
+const { postFormInfo, updateFormInfo, getDocuments, updateContractPCStatus, postManualContract, moveAndDeleteDocument, updateDocument, updateInheritedRates, VALID_MOVE_TARGET_COLLECTIONS, VALID_MOVE_SOURCE_COLLECTIONS } = require('../lib/jobs/queryMongoDB')
 const { validateRoles } = require('../lib/auth/validateRoles')
+const { decodeToken } = require('../lib/auth/decodeToken.js')
 const { assertManualContractAllowed } = require('../lib/auth/assertManualContractAllowed')
 const { archiveDocument, ArchiveLookupError } = require('../lib/jobs/queryArchive')
 const { getUnsettledInvoices, describeInvoice } = require('../lib/jobs/invoiceChecks')
 const { logger } = require('@vtfk/logger')
 const { ObjectId } = require('mongodb')
 const { sanitizeErrorForLogging } = require('../lib/helpers/maskFnr')
+const { validateHistoryRateEdit, planHistoryRateEdit, planInheritedUpdates, CONFLICT } = require('../lib/helpers/historyRateEdit')
 
 app.http('handleDbRequest', {
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
@@ -199,6 +201,56 @@ app.http('handleDbRequest', {
               }
             } else if (jsonBody.contractID && jsonBody.updateData === true) {
               const logPrefix = `handleDbRequest - PUT - updateData - contractID: ${jsonBody.contractID}`
+
+              // History: only administrators, only payment fields, and the server writes the changeLog.
+              if (fetchDocumentsFromTargetCollection === 'history') {
+                if (!validateRoles(authorizationHeader, ['elevkontrakt.administrator-readwrite'])) {
+                  logger('error', [logPrefix, 'Unauthorized history update attempt'])
+                  return { status: 403, jsonBody: { error: 'Bare administratorer kan endre avtaler i historikken.' } }
+                }
+                // Mock mode reads the mock collection, so a write here would hit the wrong one.
+                if (isMock) return { status: 400, jsonBody: { error: 'Innbetalinger kan ikke registreres i testmodus (mock).' } }
+                const historyData = jsonBody.data || {}
+                const invalid = validateHistoryRateEdit(historyData) || (!ObjectId.isValid(jsonBody.contractID) && 'Ugyldig avtale-ID')
+                if (invalid) {
+                  logger('warn', [logPrefix, invalid])
+                  return { status: 400, jsonBody: { error: invalid } }
+                }
+                try {
+                  const found = await getDocuments({ _id: new ObjectId(jsonBody.contractID) }, 'history')
+                  const document = found?.status === 200 ? found.result[0] : null
+                  if (!document) return { status: 404, jsonBody: { error: 'Fant ikke avtalen i historikken.' } }
+                  const { upn } = decodeToken(authorizationHeader.split(' ')[1], ['upn'])
+                  const plan = planHistoryRateEdit(document, historyData, jsonBody.expected, upn)
+                  if (plan.error) {
+                    logger('warn', [logPrefix, plan.error])
+                    return { status: plan.status, jsonBody: { error: plan.error } }
+                  }
+                  logger('info', [logPrefix, `Oppdaterer historisk dokument, felter: ${Object.keys(historyData).join(', ')}`])
+                  const result = await updateDocument(jsonBody.contractID, { data: historyData, changeLog: plan.changeLog }, 'historyWithChangeLog', plan.filter)
+                  // updateDocument returns { status, error } instead of throwing.
+                  if (result?.error) {
+                    logger('error', [logPrefix, 'updateDocument nektet oppdateringen', result.error])
+                    return { status: 500, body: 'Internal server error' }
+                  }
+                  // Matched before but not now: changed in between.
+                  if (result?.matchedCount === 0) return { status: 409, jsonBody: { error: CONFLICT } }
+                  // The history edit is saved. A failure on the live copy is reported, not rolled back.
+                  let liveUpdated = 0
+                  let liveError = false
+                  try {
+                    liveUpdated = await updateInheritedRates(planInheritedUpdates(document, historyData, plan.changeLog))
+                    if (liveUpdated) logger('info', [logPrefix, `Oppdaterte samme rate på ${liveUpdated} nyere avtale(r)`])
+                  } catch (error) {
+                    liveError = true
+                    logger('error', [logPrefix, 'Error ved oppdatering av arvede rater på nyere avtale', sanitizeErrorForLogging(error)])
+                  }
+                  return { status: 200, jsonBody: { ...result, liveUpdated, liveError } }
+                } catch (error) {
+                  logger('error', [logPrefix, 'Error ved oppdatering av historisk dokument', sanitizeErrorForLogging(error)])
+                  return { status: 500, body: 'Internal server error' }
+                }
+              }
 
               // Handle updates to the document in the database from an external system.
               const changeLog = jsonBody.changeLog || []
