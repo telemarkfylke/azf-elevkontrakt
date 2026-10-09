@@ -77,7 +77,6 @@ app.http('invoiceDelete', {
             logger('error', [`${logPrefix} - ${request.method}`, 'No invoiceId query parameter provided'])
             return { status: 400, body: 'Bad Request: No invoiceId query parameter provided' }
         }
-        console.log('Deleting invoice with id:', invoiceId)
         const invoiceResult = await deleteInvoice(invoiceId)
 
         return { status: invoiceResult.status, jsonBody: invoiceResult.jsonBody }

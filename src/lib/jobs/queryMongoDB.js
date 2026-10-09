@@ -1131,7 +1131,6 @@ const deleteExtraInvoice = async (invoiceId) => {
     logger('error', [logPrefix, 'Mangler invoiceId'])
     return { status: 400, error: 'Mangler invoiceId' }
   }
-  console.log('deleteExtraInvoice - invoiceId:', invoiceId)
   try {
     const result = await mongoClient.db(mongoDB.dbName).collection(`${mongoDB.invoiceCollection}`).deleteOne({ _id: new ObjectId(invoiceId) })
     if (result.deletedCount === 0) {
