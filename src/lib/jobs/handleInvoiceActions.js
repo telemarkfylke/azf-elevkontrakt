@@ -52,8 +52,8 @@ const getInvoices = async (request) => {
         if (schoolEnums[school]) {
             query['student.skole'] = schoolEnums[school]
         } else {
-            logger('error', [`${logPrefix} - ${request.method}`, 'Invalid school query parameter provided'])
-            return { status: 400, body: 'Bad Request: Invalid school query parameter provided' }
+            logger('error', [`${logPrefix} - ${request.method}`, `Invalid school query parameter provided - ${school} - not in schoolEnums. User: ${user.displayName} (${user.userPrincipalName})`])
+            return { status: 400, body: `Bad Request: Invalid school query parameter provided - ${school} - not in schoolEnums` }
         }
     }
 
